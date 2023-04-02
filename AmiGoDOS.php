@@ -18,8 +18,8 @@ const MODE_AUX = 0;
 const MODE_MIDI_MONITOR = 1;
 const MODE_AUX_CONSOLE = 2;
 const MODE_MIDI_RUNTIME = 3;
-const MODE_RAW = 4;
-//var CURRENT_MODE = MODE_RAW;
+const MODE_DEBUG = 4;
+//var CURRENT_MODE = MODE_DEBUG;
 var CURRENT_MODE = MODE_AUX_CONSOLE;
 const help = [];
 const user_mode = [];
@@ -28,7 +28,7 @@ user_mode.push(
  "SERIAL_MODE_MIDI_MONITOR",
  "SERIAL_MODE_AUX_CONSOLE",
  "SERIAL_MODE_MIDI_RUNTIME",
- "SERIAL_MODE_RAW"
+ "SERIAL_MODE_DEBUG"
 );
 //the following lines of code demonstrate how to receive AUX: serial data from the Amiga
 //formatted in a compact way
@@ -38,7 +38,8 @@ window.addEventListener('message', event => {
 if(event.data.msg == 'serial_port_out')
 {
  switch (CURRENT_MODE) {
- case MODE_AUX, MODE_AUX_CONSOLE:
+ case MODE_AUX:
+ case MODE_AUX_CONSOLE:
   let byte_from_amiga=event.data.value;
   out_buffer+=String.fromCharCode( byte_from_amiga & 0xff );
   switch (byte_from_amiga &0xff){
@@ -47,8 +48,16 @@ if(event.data.msg == 'serial_port_out')
    out_buffer="";
    break;
   }
-  if (out_buffer.includes(": ")==true){
-   term.echo(out_buffer.trim());
+  if (out_buffer.includes("/N: ")==true){
+   term.set_prompt(out_buffer.trim());
+   out_buffer="";
+  }
+  if (out_buffer.includes("/S: ")==true){
+   term.set_prompt(out_buffer.trim());
+   out_buffer="";
+  }
+  if (out_buffer.includes("/K: ")==true){
+   term.set_prompt(out_buffer.trim());
    out_buffer="";
   }
   if (out_buffer.includes("> ")==true){
@@ -81,7 +90,7 @@ if(event.data.msg == 'serial_port_out')
   }
 //  term.echo(performance.now()+": "+ midi_byte_from_amiga.toString(16));
   break;
- case MODE_RAW:
+ case MODE_DEBUG:
   let raw_byte_from_amiga=event.data.value & 0xff ;
   switch ( raw_byte_from_amiga ){
   default:
@@ -101,28 +110,27 @@ if(event.data.msg == 'serial_port_out')
 }
 });
 function ADOS_TX_LINE(msg){
- //get the vAmigaWeb iFrame window
  let vAmigaWeb_window = document.getElementById("vAmigaWeb").contentWindow;
  let data = msg;
  switch (CURRENT_MODE) {
  case MODE_AUX_CONSOLE:
-  //data that should be written into the serial port needs a $0C or \r
+ case MODE_DEBUG:
   data = data + "\r";
   break;
  }
- //send the data to the serial port of vAmigaWeb
  vAmigaWeb_window.postMessage({cmd:"ser:", text: data}, "*");
 }
 function ADOS_TX_CHAR(msg){
- // conver msg_key to data_byte
- //get the vAmigaWeb iFrame window
  let vAmigaWeb_window = document.getElementById("vAmigaWeb").contentWindow;
  if (msg == "_BREAK_"){
   let _BREAK_=0x03;
   let data = String.fromCharCode(_BREAK_);
-  //send the data to the serial port of vAmigaWeb
   vAmigaWeb_window.postMessage({cmd:"ser:", text: data}, "*");
  }
+}
+function TS0CA(modelID='BUFFY') {
+const modelAmiga = document.getElementById(modelID);
+ modelAmiga.click();
 }
 </script>
 <style>
@@ -158,15 +166,18 @@ jQuery( function($){
    if (cmd!=''){
 switch(command_arr.length){
 case 1:
- if (cmd == 'help') { term.echo("Available commands:\n alias, assign, cls, echo, exit, help, loadwb, prompt,\n clear, click, close, engage, logout, mode\n ftp(dummy)"); }
+ if (cmd == 'help') { term.echo("Available commands:\n alias, assign, cls, echo, exit, help, buffy, loadwb, prompt,\n clear, click, close, engage, logout, mode\n ftp(dummy)"); }
  else if (cmd == 'cls') { term.clear(); term.echo("AmiGoDOS - Developer Shell [" + user_mode[CURRENT_MODE] + "]"); }
  else if (cmd == 'alias'){ term.echo("WIP: make short version of long commands/args"); }
+ else if (cmd == 'buffy'){ TS0CA();}
  else if (cmd == 'assign'){
   switch (CURRENT_MODE){
   case MODE_MIDI_MONITOR:
    term.echo("WIP: assign i.e. 0xFA midi byte to trigger function in the webpage");
    break;
-  case MODE_AUX, MODE_AUX_CONSOLE:
+  case MODE_AUX:
+  case MODE_AUX_CONSOLE:
+  case MODE_DEBUG:
    ADOS_TX_LINE(cmd);
    break;
   default:
@@ -206,7 +217,9 @@ term.push(
  }
  else {
   switch (CURRENT_MODE){
-  case MODE_AUX, MODE_AUX_CONSOLE:
+  case MODE_AUX:
+  case MODE_AUX_CONSOLE:
+  case MODE_DEBUG:
    ADOS_TX_LINE(cmd);
    //term.echo( cmd +': Unknown command! Type [help] for more info..');
    break;
@@ -226,7 +239,9 @@ default:
  else if (cmd == 'exit'){ parent.location.assign(command_arr[0]); }
  else {
   switch (CURRENT_MODE){
-  case MODE_AUX, MODE_AUX_CONSOLE:
+  case MODE_DEBUG:
+  case MODE_AUX:
+  case MODE_AUX_CONSOLE:
    ADOS_TX_LINE(command);
    //term.echo( cmd +': Unknown command! Type [help] for more info..');
    break;
@@ -258,7 +273,7 @@ default:
 
 <div  style="display: flex;align-items: center;justify-content: left;">
 <div id="container">
-<img style="width:960px; height:633px" src="../img/C1084.gif"
+<img id="BUFFY" style="width:960px; height:633px" src="../img/C1084.gif"
 ontouchstart="touched=true"
 onclick="
 vAmigaWeb_player.vAmigaWeb_url='./';  //the emulator files are in the same folder as the run.html
