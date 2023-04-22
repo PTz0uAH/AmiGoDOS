@@ -2,11 +2,10 @@
  $usermode = "SERIAL_MODE_AUX";
  $server_name = $_ENV['SERVER_NAME'];
  $prompt = '0.SYS:> ';
- if ( !isset($_GET['amiga']) ){
-  $amiga = 'Buffy';
- }else{
-  $amiga = $_GET['amiga'];
- }
+ if (!isset($_GET['amiga'])){$amiga='Buffy';}else{$amiga=$_GET['amiga'];}
+ //behaviour.. if set then autoboot
+ if ( !isset($_GET['autoboot']) ){ $init=''; }
+ else{ $init='onInit: function() { TS0CA("'.$amiga.'");},'; }
  if ( !isset($_GET['boot']) ){
   $boot = '';
   $snapshot="     buttons: [
@@ -42,7 +41,6 @@ $config_1="
 <script src="js/jquery.js"></script>
 <script src="js/jquery.terminal.min.js"></script>
 <link href="css/jquery.terminal.min.css" rel="stylesheet"/>
-<!-- vAmigaWeb-block start -->
 <script src="js/vAmigaWeb_player.js"></script>
 <script src="js/keyboard.js"></script>
 <script>
@@ -231,7 +229,7 @@ jQuery( function($){
      " alias, assign, cls, echo, exit, help, prompt,\n"+
      " clear, click, close, engage, logout, mode\n"+
      "Available Amiga's by Name: amy, buffy, claire, daisy, eva, faith, gwen\n"+
-     "Available Amiga's by Type: a500, a1000, a2000, a3000, cdtv\n"+
+     "Available Amiga's by Type: a500, a600, a1000, a2000, a3000, cdtv\n"+
      "Command Shells: midi, vamiga, ftp(dummy)"); }
      else if (cmd == 'about1'){ term.echo("AmiGoDOS dialect is my amiga-ish syntax flavoured devshell originated in Delphi7 Pascal in 2002..");}
       else if (cmd == 'about2'){ term.echo("tried to keep the AmigaDOS syntax somehow alive.. to get things done on MS side.. even in Amiga GUI style");}
@@ -264,13 +262,13 @@ jQuery( function($){
      else if (cmd == 'a2000')   { parent.location.assign("AmiGoDOS.php?amiga=A2000");}
      else if (cmd == 'a3000')   { parent.location.assign("AmiGoDOS.php?amiga=A3000");}
      else if (cmd == 'cdtv')    { parent.location.assign("AmiGoDOS.php?amiga=CDTV");}
-     else if (cmd == 'amy')		{ parent.location.assign("https://amigoxpe.net/TS0CA/AmiGoDOS.php?amiga=Amy");}
-     else if (cmd == 'buffy')	{ parent.location.assign("https://amigoxpe.net/TS0CA/AmiGoDOS.php?amiga=Buffy");}
-     else if (cmd == 'claire')	{ parent.location.assign("https://amigoxpe.net/TS0CA/AmiGoDOS.php?amiga=Claire");}
-     else if (cmd == 'daisy')	{ parent.location.assign("https://amigoxpe.net/TS0CA/AmiGoDOS.php?amiga=Daisy");}
-     else if (cmd == 'eva')		{ parent.location.assign("https://amigoxpe.net/TS0CA/AmiGoDOS.php?amiga=Eva");}
-     else if (cmd == 'faith')	{ parent.location.assign("https://amigoxpe.net/TS0CA/AmiGoDOS.php?amiga=Faith");}
-     else if (cmd == 'gwen')	{ parent.location.assign("https://amigoxpe.net/TS0CA/AmiGoDOS.php?amiga=Gwen");}
+     else if (cmd == 'amy')		{ parent.location.assign("AmiGoDOS.php?amiga=Amy");}
+     else if (cmd == 'buffy')	{ parent.location.assign("AmiGoDOS.php?amiga=Buffy");}
+     else if (cmd == 'claire')	{ parent.location.assign("AmiGoDOS.php?amiga=Claire");}
+     else if (cmd == 'daisy')	{ parent.location.assign("AmiGoDOS.php?amiga=Daisy");}
+     else if (cmd == 'eva')		{ parent.location.assign("AmiGoDOS.php?amiga=Eva");}
+     else if (cmd == 'faith')	{ parent.location.assign("AmiGoDOS.php?amiga=Faith");}
+     else if (cmd == 'gwen')	{ parent.location.assign("AmiGoDOS.php?amiga=Gwen");}
      else if (cmd == 'close')	{ parent.close(); }
      else if (cmd == 'cls') 	{ term.clear(); term.echo("AmiGoDOS - Developer Shell [" + user_mode[CURRENT_MODE] + "]"); }
      else if (cmd == 'engage')	{ TS0CA("<?php echo $amiga;?>"); }
@@ -373,10 +371,12 @@ jQuery( function($){
    height: 320,
    greetings: "AmiGoDOS - Developer Shell [" + user_mode[CURRENT_MODE] + "]",
    prompt: "> ", //if AUX is active we get the prompt from the Amiga console
+   <?php echo $init;?>//onInit
    onBlur: function() {	return false; }// prevent loosing focus
   }
  );
 });
+//window.addEventListener('load', function () { term.echo("It's loaded!") });
 </script>
 </div>
 </div>
