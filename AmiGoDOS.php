@@ -2,6 +2,7 @@
  $usermode = "SERIAL_MODE_AUX";
  $server_name = $_ENV['SERVER_NAME'];
  $prompt = '0.SYS:> ';
+ if (!isset($_GET['mode'])){$mode=2;}else{$mode=$_GET['mode'];}
  if (!isset($_GET['amiga'])){$amiga='Buffy';}else{$amiga=$_GET['amiga'];}
  //behaviour.. if set then autoboot
  if ( !isset($_GET['autoboot']) ){ $init=''; }
@@ -45,6 +46,7 @@ $config_1="
 <script src="js/keyboard.js"></script>
 <script>
 var term;
+var midi = null;  // global MIDIAccess object
 const server_name = "<?php echo $server_name;?>"
 //var PROMPT_TRIGGERS = ["> ","/N ","S/ ","/K "];
 const MODE_AUX = 0;
@@ -53,19 +55,24 @@ const MODE_AUX_CONSOLE = 2;
 const MODE_MIDI_RUNTIME = 3;
 const MODE_DEBUG = 4;
 //var CURRENT_MODE = MODE_DEBUG;
-var CURRENT_MODE = MODE_AUX_CONSOLE;
+var CURRENT_MODE = Number("<?php echo $mode;?>"); //MODE_AUX_CONSOLE;
+var AMIGADOS_HELP_MODE = 0;
 const help = [];
-const user_mode = [];
-user_mode.push(
+const user_mode = [
+//user_mode.push(
  "<?php echo $usermode;?>" ,
  "SERIAL_MODE_MIDI_MONITOR",
  "SERIAL_MODE_AUX_CONSOLE",
  "SERIAL_MODE_MIDI_RUNTIME",
  "SERIAL_MODE_DEBUG"
-);
+//);
+];
 //how to receive AUX: serial data from the Amiga formatted in a compact way (trimmed)
 let out_buffer="";
 let count=0;
+let midi_byte_from_amiga = 0;
+const midi_output_id =[];
+const midi_event_note=[];
 window.addEventListener('message', event => {
 if(event.data.msg == 'serial_port_out')
 {
@@ -80,11 +87,14 @@ if(event.data.msg == 'serial_port_out')
    out_buffer="";
    break;
   }
-  //AmigaDOS switches for help mode [CMD ?]
-  if (out_buffer.includes("/N: ")==true){term.set_prompt(out_buffer.trim());out_buffer="";}
-  if (out_buffer.includes("/S: ")==true){term.set_prompt(out_buffer.trim());out_buffer="";}
-  if (out_buffer.includes("/K: ")==true){term.set_prompt(out_buffer.trim());out_buffer="";}
-  if (out_buffer.includes("> ")==true){term.set_prompt(out_buffer.trim());out_buffer="";}
+  if (AMIGADOS_HELP_MODE==1){
+   //AmigaDOS switches for cmdline help mode [CMD ?]
+   if (out_buffer.slice(-4)=="/N: "){term.set_prompt(out_buffer.trim());out_buffer="";}
+   if (out_buffer.slice(-4)=="/S: "){term.set_prompt(out_buffer.trim());out_buffer="";}
+   if (out_buffer.slice(-4)=="/K: "){term.set_prompt(out_buffer.trim());out_buffer="";}
+  }
+//  if (out_buffer.includes("> ")==true){term.set_prompt(out_buffer.trim());out_buffer="";}
+  if (out_buffer.slice(-2)=="> "){term.set_prompt(out_buffer.trim());out_buffer="";}
   //term.echo(out_buffer, {newline: false});
   //let i = 0;
   //check_trigger: while(i < 4)
@@ -100,8 +110,36 @@ if(event.data.msg == 'serial_port_out')
    if (out_buffer.includes(" ending")==true){term.set_prompt("> ");out_buffer="";}
   }
   break;
+ case MODE_MIDI_RUNTIME:
+  midi_byte_from_amiga=event.data.value & 0xff ;
+  switch (midi_event_note.length){
+   case 0:
+	cmd = midi_byte_from_amiga >> 4;
+	channel = midi_byte_from_amiga & 0xf;
+    if (cmd==9 || cmd==8){
+    midi_event_note[0]=midi_byte_from_amiga;
+    //midi_event_note.push(midi_byte_from_amiga);
+    }
+    break;
+   case 1:
+    midi_event_note[1]=midi_byte_from_amiga;
+    //midi_event_note.push(midi_byte_from_amiga);
+    break;
+   case 2:
+    midi_event_note[2]=midi_byte_from_amiga;
+    //midi_event_note.push(midi_byte_from_amiga);
+    const output = midi.outputs.get(midi_output_id[0]);
+    //term.echo("yes 3 bytes");
+    output.send(midi_event_note); // sends the message. ERROR
+    midi_event_note.length=0;
+    break;
+//   default:
+//    break;
+  }
+  //hier
+  break;
  case MODE_MIDI_MONITOR:
-  let midi_byte_from_amiga=event.data.value & 0xff ;
+  midi_byte_from_amiga=event.data.value & 0xff ;
   switch ( midi_byte_from_amiga ){
   case 0xF8: break; //filter midiclocks
   default:
@@ -171,16 +209,85 @@ function ADOS_TX_MIDI(msg){
   term.echo("UNASSIGNED_BYTE");
  }
 }
+
+function onMIDISuccess( midiAccess ) {
+  term.echo( "WebMIDI API ready!" );
+  midi = midiAccess;  // store in the global (in real usage, would probably keep in an object instance)
+ // autostart the first MIDI output
+ startMIDIOutput(midi,0);
+}
+function onMIDIFailure(msg) {
+  term.echo( "Failed to get MIDI access - " + msg );
+}
+function GET_MIDI_INPUTS( midiAccess ) {
+  for (const entry of midiAccess.inputs) {
+    const input = entry[1];
+    term.echo(
+      `Input port [type:'${input.type}']` +
+        ` id:'${input.id}'` +
+        ` manufacturer:'${input.manufacturer}'` +
+        ` name:'${input.name}'` +
+        ` version:'${input.version}'`
+    );
+  }
+}
+function GET_MIDI_OUTPUTS( midiAccess ) {
+  for (const entry of midiAccess.outputs) {
+    const output = entry[1];
+    term.echo(
+      `Output port [type:'${output.type}'] id:'${output.id}' manufacturer:'${output.manufacturer}' name:'${output.name}' version:'${output.version}'`
+    );
+  }
+}
+function apiMIDI_INS_OUTS( midiAccess ) {
+ GET_MIDI_OUTPUTS(midiAccess);
+ GET_MIDI_INPUTS(midiAccess);
+//for (const entry of midiAccess.inputs) {
+//  const input = entry[1];
+//  term.echo(input.id);
+//}
+
+}
+
+function onMIDIMessage(event) {
+  let str = `MIDI message received at timestamp ${event.timeStamp}[${event.data.length} bytes]: `;
+  for (const character of event.data) {
+    str += `0x${character.toString(16)} `;
+  }
+  term.echo(str);
+}
+
+function startLoggingMIDIInput(midiAccess, indexOfPort) {
+  midiAccess.inputs.forEach((entry) => {
+    entry.onmidimessage = onMIDIMessage;
+  });
+}
+
+function startMIDIOutput(midiAccess, indexOfPort) {
+ for (const entry of midiAccess.outputs) {
+  const output = entry[1];
+  //term.echo("Midi-Out_Open:".output.id);
+  midi_output_id.push(output.id);
+  output.open();
+  //break;
+ }
+
+}
 // local functions when not connected to AUX:
 function ADOS_ALIAS(key, value){
-
 }
 
 function ADOS_ASSIGN(key, value){
 }
 
 function TS0CA(modelID='Buffy') {
-const modelAmiga = document.getElementById(modelID);
+ switch (CURRENT_MODE) {
+ case MODE_MIDI_MONITOR:
+ case MODE_MIDI_RUNTIME:
+  navigator.requestMIDIAccess().then( onMIDISuccess, onMIDIFailure );
+  break;
+ }
+ const modelAmiga = document.getElementById(modelID);
  modelAmiga.click();
 }
 //function removeDiv(machineID='container')
@@ -227,7 +334,7 @@ jQuery( function($){
     case 1:
      if (cmd == 'help') { term.echo("AmiGoDOS commands:\n"+
      " alias, assign, cls, echo, exit, help, prompt,\n"+
-     " clear, click, close, engage, logout, mode\n"+
+     " clear, click, close, engage, logout, mode, lic\n"+
      "Available Amiga's by Name: amy, buffy, claire, daisy, eva, faith, gwen\n"+
      "Available Amiga's by Type: a500, a600, a1000, a2000, a3000, cdtv\n"+
      "Command Shells: midi, vamiga, ftp(dummy)"); }
@@ -239,6 +346,15 @@ jQuery( function($){
           else if (cmd == 'about6'){ term.echo("AmiGoDOS for the Web uses JavaScript JQueryTerminal as versatile framework.. with AmiGoDOS syntax/functions..");}
            else if (cmd == 'about7'){ term.echo("a for Web usage simplified AmiGoDOS is just a nice nostalgic label for WIP to keep the momentum going..");}
             else if (cmd == 'about8'){ term.echo("with kind regards.. PTz(Peter Slootbeek)uAH");}
+     else if (cmd == 'lic'){ term.echo(
+     "AmiGoDOS (TS0CA) Licenses, Attributions & more..\n"+
+     "This just-for-the-fun-project utilises the following frameworks:\n"+
+     "vAmigaWeb (GPL-3.0) by Mithrendal [ https://github.com/vAmigaWeb ]\n"+
+     "Jquery.Terminal (MIT) by Jakub T. Jankiewicz [ https://github.com/jcubic/jquery.terminal ]\n"+
+     "AmiGoDOS (TS0CA) by PTz(Peter Slootbeek)uAH [ https://github.com/PTz0uAH/AmiGoDOS ]\n"+
+     "You may use AmiGoDOS for free to Maintain & Preserve your Classic Commodore Amiga experience..\n"+
+     "All trademarks belong to their respective owners!"
+     ); }
      else if (cmd == 'alias'){ term.echo("WIP: make short version of long commands/args"); }
      else if (cmd == 'assign'){
       switch (CURRENT_MODE){
@@ -257,18 +373,32 @@ jQuery( function($){
      }
      //else if (cmd == 'click')	{ parent.newcli(); }
      else if (cmd == 'a500')    { parent.location.assign("AmiGoDOS.php?amiga=A500");}
+     else if (cmd == 'A500')    { parent.location.assign("AmiGoDOS.php?amiga=A500&autoboot");}
      else if (cmd == 'a600')    { parent.location.assign("AmiGoDOS.php?amiga=A600");}
+     else if (cmd == 'A600')    { parent.location.assign("AmiGoDOS.php?amiga=A600&autoboot");}
      else if (cmd == 'a1000')   { parent.location.assign("AmiGoDOS.php?amiga=A1000");}
+     else if (cmd == 'A1000')   { parent.location.assign("AmiGoDOS.php?amiga=A1000&autoboot");}
      else if (cmd == 'a2000')   { parent.location.assign("AmiGoDOS.php?amiga=A2000");}
+     else if (cmd == 'A2000')   { parent.location.assign("AmiGoDOS.php?amiga=A2000&autoboot");}
      else if (cmd == 'a3000')   { parent.location.assign("AmiGoDOS.php?amiga=A3000");}
+     else if (cmd == 'A3000')   { parent.location.assign("AmiGoDOS.php?amiga=A3000&autoboot");}
      else if (cmd == 'cdtv')    { parent.location.assign("AmiGoDOS.php?amiga=CDTV");}
+     else if (cmd == 'CDTV')    { parent.location.assign("AmiGoDOS.php?amiga=CDTV&autoboot");}
+     // use Amy for MIDI stuff like Music-X, Octamed, Scala etc..
      else if (cmd == 'amy')		{ parent.location.assign("AmiGoDOS.php?amiga=Amy");}
+     else if (cmd == 'Amy')		{ parent.location.assign("AmiGoDOS.php?amiga=Amy&mode=3&autoboot");}
      else if (cmd == 'buffy')	{ parent.location.assign("AmiGoDOS.php?amiga=Buffy");}
+     else if (cmd == 'Buffy')	{ parent.location.assign("AmiGoDOS.php?amiga=Buffy&autoboot");}
      else if (cmd == 'claire')	{ parent.location.assign("AmiGoDOS.php?amiga=Claire");}
+     else if (cmd == 'Claire')	{ parent.location.assign("AmiGoDOS.php?amiga=Claire&autoboot");}
      else if (cmd == 'daisy')	{ parent.location.assign("AmiGoDOS.php?amiga=Daisy");}
+     else if (cmd == 'Daisy')	{ parent.location.assign("AmiGoDOS.php?amiga=Daisy&autoboot");}
      else if (cmd == 'eva')		{ parent.location.assign("AmiGoDOS.php?amiga=Eva");}
+     else if (cmd == 'Eva')		{ parent.location.assign("AmiGoDOS.php?amiga=Eva&autoboot");}
      else if (cmd == 'faith')	{ parent.location.assign("AmiGoDOS.php?amiga=Faith");}
+     else if (cmd == 'Faith')	{ parent.location.assign("AmiGoDOS.php?amiga=Faith&autoboot");}
      else if (cmd == 'gwen')	{ parent.location.assign("AmiGoDOS.php?amiga=Gwen");}
+     else if (cmd == 'Gwen')	{ parent.location.assign("AmiGoDOS.php?amiga=Gwen&autoboot");}
      else if (cmd == 'close')	{ parent.close(); }
      else if (cmd == 'cls') 	{ term.clear(); term.echo("AmiGoDOS - Developer Shell [" + user_mode[CURRENT_MODE] + "]"); }
      else if (cmd == 'engage')	{ TS0CA("<?php echo $amiga;?>"); }
@@ -292,13 +422,18 @@ jQuery( function($){
       term.push(
        function(command, term) {
         if (command == 'help') {term.echo('Available MIDI commands:\n'+
+        'exit [leave MIDI mode]\n'+
+        'info [show MIDI Inputs/Outputs]\n'+
         'start [send MIDI_START byte to the Amiga serial input]\n'+
         'cont [send MIDI_CONTINUE byte to the Amiga serial input]\n'+
         'stop [send MIDI_STOP byte to the Amiga serial input]');}
         else if (command == 'cls'){ term.clear(); term.echo("AmiGoDOS - Developer Shell [" + user_mode[CURRENT_MODE] + "]"); }
-        else if (command == 'start') {ADOS_TX_MIDI(command);}
+        else if (command == 'start') {count=0; ADOS_TX_MIDI(command);}
         else if (command == 'cont') {ADOS_TX_MIDI(command);}
         else if (command == 'stop') {ADOS_TX_MIDI(command);}
+        else if (command == 'info') {apiMIDI_INS_OUTS(midi);}
+        //else if (command == 'midi_out_open') {startMIDIOutput(midi,0);}
+//        else if (command == 'midi_out_close') {startMIDIOutput(midi,0);}
         else if (command == 'exit') {term.pop();}
         else { term.echo('unknown MIDI command ' + command); }
        },
@@ -353,6 +488,10 @@ jQuery( function($){
       case MODE_DEBUG:
       case MODE_AUX:
       case MODE_AUX_CONSOLE:
+       if (command.length>2){
+        if ( command.slice(-2)==" ?" ){AMIGADOS_HELP_MODE=1;}
+        else {AMIGADOS_HELP_MODE=0;}
+       }
        ADOS_TX_LINE(command);
        break;
       default:
@@ -376,7 +515,6 @@ jQuery( function($){
   }
  );
 });
-//window.addEventListener('load', function () { term.echo("It's loaded!") });
 </script>
 </div>
 </div>
