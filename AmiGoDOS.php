@@ -73,6 +73,8 @@ const user_mode = [
 let out_buffer="";
 let count=0;
 let midi_byte_from_amiga = 0;
+let midi_running_status_note_on = false;
+let midi_running_status_note_off = false;
 const midi_output_id =[];
 const midi_event_note_on=[];
 const midi_event_note_off=[];
@@ -124,17 +126,22 @@ if(event.data.msg == 'serial_port_out')
 //   case 0xF0: //SYSEX
 //    break;
 //   default:
-// implement RUNMODE where after a ststusbyte PAIRS
-// of Key-Velocity need to be processed
+// implement RUNNING-STATUS where after a ststusbyte PAIRS
+// of Key/Velocity values need to be processed..
     if (midi_byte_from_amiga > 0x7F){ //STATUS_BYTE
      status_nibble = midi_byte_from_amiga >> 4;
      channel_nibble = midi_byte_from_amiga & 0xf;
      switch(status_nibble){
       case 0x09: //NOTE_ON
+       //turn off running status
        midi_event_note_on[0]=midi_byte_from_amiga;
+       midi_running_status_note_on = true;
+       midi_running_status_note_off = false;
        break;
       case 0x08: //NOTE_OFF
        midi_event_note_off[0]=midi_byte_from_amiga;
+       midi_running_status_note_on = false;
+       midi_running_status_note_off = true;
        break;
       case 0x0A: //POLYPHONIC_AFTERTOUCH
        midi_event_polyphonic_aftertouch[0]=midi_byte_from_amiga;
@@ -154,24 +161,28 @@ if(event.data.msg == 'serial_port_out')
      }
     }else{
      //DATA_BYTE
-     switch (midi_event_note_on.length){ //NOTE_ON
-      case 1: midi_event_note_on[1]=midi_byte_from_amiga; break;
-      case 2:
-       midi_event_note_on[2]=midi_byte_from_amiga;
-       const output = midi.outputs.get(midi_output_id[0]);
-       output.send(midi_event_note_on); // sends the message
-       midi_event_note_on.length=0;
-       break;
-     }
-     switch (midi_event_note_off.length){ //NOTE_OFF
-      case 1: midi_event_note_off[1]=midi_byte_from_amiga; break;
-      case 2:
-       midi_event_note_off[2]=0x00;//midi_byte_from_amiga;
-       const output = midi.outputs.get(midi_output_id[0]);
-       output.send(midi_event_note_off); // sends the message
-       midi_event_note_off.length=0;
-       break;
-     }
+      if (midi_running_status_note_on == true){
+       switch (midi_event_note_on.length){ //NOTE_ON
+        case 1: midi_event_note_on[1]=midi_byte_from_amiga; break;
+        case 2:
+         midi_event_note_on[2]=midi_byte_from_amiga;
+         const output = midi.outputs.get(midi_output_id[0]);
+         output.send(midi_event_note_on); // sends the message
+         midi_event_note_on.length=1; //keep running status
+         break;
+       }
+      }
+      if (midi_running_status_note_off == true){
+       switch (midi_event_note_off.length){ //NOTE_OFF
+        case 1: midi_event_note_off[1]=midi_byte_from_amiga; break;
+        case 2:
+         midi_event_note_off[2]=0x00;//midi_byte_from_amiga;
+         const output = midi.outputs.get(midi_output_id[0]);
+         output.send(midi_event_note_off); // sends the message
+         midi_event_note_off.length=1;
+         break;
+       }
+      }
      switch (midi_event_polyphonic_aftertouch.length){ //POLYPHONIC_AFTERTOUCH
       case 1: midi_event_polyphonic_aftertouch[1]=midi_byte_from_amiga; break;
       case 2:
