@@ -54,6 +54,7 @@ const MODE_MIDI_MONITOR = 1;
 const MODE_AUX_CONSOLE = 2;
 const MODE_MIDI_RUNTIME = 3;
 const MODE_DEBUG = 4;
+const MODE_MIDI_STUDIO = 5;
 //var CURRENT_MODE = MODE_DEBUG;
 var CURRENT_MODE = Number("<?php echo $mode;?>"); //MODE_AUX_CONSOLE;
 var AMIGADOS_HELP_MODE = 0;
@@ -64,7 +65,8 @@ const user_mode = [
  "SERIAL_MODE_MIDI_MONITOR",
  "SERIAL_MODE_AUX_CONSOLE",
  "SERIAL_MODE_MIDI_RUNTIME",
- "SERIAL_MODE_DEBUG"
+ "SERIAL_MODE_DEBUG",
+ "SERIAL_MODE_MIDI_STUDIO"
 //);
 ];
 //how to receive AUX: serial data from the Amiga formatted in a compact way (trimmed)
@@ -72,7 +74,13 @@ let out_buffer="";
 let count=0;
 let midi_byte_from_amiga = 0;
 const midi_output_id =[];
-const midi_event_note=[];
+const midi_event_note_on=[];
+const midi_event_note_off=[];
+const midi_event_polyphonic_aftertouch=[];
+const midi_event_control_change=[];
+const midi_event_program_change=[]; //1 databyte
+const midi_event_channel_aftertouch=[]; //1 databyte
+const midi_event_pitch_bend=[];
 window.addEventListener('message', event => {
 if(event.data.msg == 'serial_port_out')
 {
@@ -110,33 +118,108 @@ if(event.data.msg == 'serial_port_out')
    if (out_buffer.includes(" ending")==true){term.set_prompt("> ");out_buffer="";}
   }
   break;
- case MODE_MIDI_RUNTIME:
+ case MODE_MIDI_STUDIO:
   midi_byte_from_amiga=event.data.value & 0xff ;
-  switch (midi_event_note.length){
-   case 0:
-	cmd = midi_byte_from_amiga >> 4;
-	channel = midi_byte_from_amiga & 0xf;
-    if (cmd==9 || cmd==8){
-    midi_event_note[0]=midi_byte_from_amiga;
-    //midi_event_note.push(midi_byte_from_amiga);
-    }
-    break;
-   case 1:
-    midi_event_note[1]=midi_byte_from_amiga;
-    //midi_event_note.push(midi_byte_from_amiga);
-    break;
-   case 2:
-    midi_event_note[2]=midi_byte_from_amiga;
-    //midi_event_note.push(midi_byte_from_amiga);
-    const output = midi.outputs.get(midi_output_id[0]);
-    //term.echo("yes 3 bytes");
-    output.send(midi_event_note); // sends the message. ERROR
-    midi_event_note.length=0;
-    break;
-//   default:
+//  switch (midi_byte_from_amiga){
+//   case 0xF0: //SYSEX
 //    break;
-  }
-  //hier
+//   default:
+    if (midi_byte_from_amiga > 0x7F){ //STATUS_BYTE
+     status_nibble = midi_byte_from_amiga >> 4;
+     channel_nibble = midi_byte_from_amiga & 0xf;
+     switch(status_nibble){
+      case 0x09: //NOTE_ON
+       midi_event_note_on[0]=midi_byte_from_amiga;
+       break;
+      case 0x08: //NOTE_OFF
+       midi_event_note_off[0]=midi_byte_from_amiga;
+       break;
+      case 0x0A: //POLYPHONIC_AFTERTOUCH
+       midi_event_polyphonic_aftertouch[0]=midi_byte_from_amiga;
+       break;
+      case 0x0B: //CONTROL_CHANGE
+       midi_event_control_change[0]=midi_byte_from_amiga;
+       break;
+      case 0x0C: //PROGRAM_CHANGE
+       midi_event_program_change[0]=midi_byte_from_amiga;
+       break;
+      case 0x0D: //CHANNEL_AFTERTOUCH
+       midi_event_channel_aftertouch[0]=midi_byte_from_amiga;
+       break;
+      case 0x0E: //PITCH_BEND
+       midi_event_pitch_bend[0]=midi_byte_from_amiga;
+       break;
+     }
+    }else{
+     //DATA_BYTE
+     switch (midi_event_note_on.length){ //NOTE_ON
+      case 1: midi_event_note_on[1]=midi_byte_from_amiga; break;
+      case 2:
+       midi_event_note_on[2]=midi_byte_from_amiga;
+       const output = midi.outputs.get(midi_output_id[0]);
+       output.send(midi_event_note_on); // sends the message
+       midi_event_note_on.length=0;
+       break;
+     }
+     switch (midi_event_note_off.length){ //NOTE_OFF
+      case 1: midi_event_note_off[1]=midi_byte_from_amiga; break;
+      case 2:
+       midi_event_note_off[2]=0x00;//midi_byte_from_amiga;
+       const output = midi.outputs.get(midi_output_id[0]);
+       output.send(midi_event_note_off); // sends the message
+       midi_event_note_off.length=0;
+       break;
+     }
+     switch (midi_event_polyphonic_aftertouch.length){ //POLYPHONIC_AFTERTOUCH
+      case 1: midi_event_polyphonic_aftertouch[1]=midi_byte_from_amiga; break;
+      case 2:
+       midi_event_polyphonic_aftertouch[2]=midi_byte_from_amiga;
+       const output = midi.outputs.get(midi_output_id[0]);
+       output.send(midi_event_polyphonic_aftertouch);
+       midi_event_polyphonic_aftertouch.length=0;
+       break;
+     }
+     switch (midi_event_control_change.length){ //CONTROL_CHANGE
+      case 1: midi_event_control_change[1]=midi_byte_from_amiga; break;
+      case 2:
+       midi_event_control_change[2]=midi_byte_from_amiga;
+       const output = midi.outputs.get(midi_output_id[0]);
+       output.send(midi_event_control_change);
+       midi_event_control_change.length=0;
+       break;
+     }
+     switch (midi_event_program_change.length){ //PROGRAM_CHANGE
+      case 1:
+       midi_event_program_change[1]=midi_byte_from_amiga;
+       //midi_event_program_change[2]=0x0;
+       const output = midi.outputs.get(midi_output_id[0]);
+       output.send(midi_event_program_change);
+       midi_event_program_change.length=0;
+       break;
+     }
+     switch (midi_event_channel_aftertouch.length){ //CHANNEL_AFTERTOUCH
+      case 1:
+       midi_event_channel_aftertouch[1]=midi_byte_from_amiga;
+       const output = midi.outputs.get(midi_output_id[0]);
+       output.send(midi_event_channel_aftertouch);
+       midi_event_channel_aftertouch.length=0;
+       break;
+     }
+     switch (midi_event_pitch_bend.length){ //PITCH_BEND
+      case 1: midi_event_pitch_bend[1]=midi_byte_from_amiga; break;
+      case 2:
+       midi_event_pitch_bend[2]=midi_byte_from_amiga;
+       const output = midi.outputs.get(midi_output_id[0]);
+       output.send(midi_event_pitch_bend);
+       midi_event_pitch_bend.length=0;
+       break;
+     }
+    };
+    break;
+//   }
+//   break;
+ case MODE_MIDI_RUNTIME:
+ //disabled
   break;
  case MODE_MIDI_MONITOR:
   midi_byte_from_amiga=event.data.value & 0xff ;
@@ -284,6 +367,7 @@ function TS0CA(modelID='Buffy') {
  switch (CURRENT_MODE) {
  case MODE_MIDI_MONITOR:
  case MODE_MIDI_RUNTIME:
+ case MODE_MIDI_STUDIO:
   navigator.requestMIDIAccess().then( onMIDISuccess, onMIDIFailure );
   break;
  }
@@ -347,18 +431,20 @@ jQuery( function($){
            else if (cmd == 'about7'){ term.echo("a for Web usage simplified AmiGoDOS is just a nice nostalgic label for WIP to keep the momentum going..");}
             else if (cmd == 'about8'){ term.echo("with kind regards.. PTz(Peter Slootbeek)uAH");}
      else if (cmd == 'lic'){ term.echo(
-     "AmiGoDOS (TS0CA) Licenses, Attributions & more..\n"+
+     "AmiGoDOS (TS0CA) licenses, attributions & more..\n"+
      "This just-for-the-fun-project utilises the following frameworks:\n"+
      "vAmigaWeb (GPL-3.0) by Mithrendal [ https://github.com/vAmigaWeb ]\n"+
      "Jquery.Terminal (MIT) by Jakub T. Jankiewicz [ https://github.com/jcubic/jquery.terminal ]\n"+
+     "You may use AmiGoDOS for free to Maintain & Preserve your Private Classic Commodore Amiga experience..\n"+
      "AmiGoDOS (TS0CA) by PTz(Peter Slootbeek)uAH [ https://github.com/PTz0uAH/AmiGoDOS ]\n"+
-     "You may use AmiGoDOS for free to Maintain & Preserve your Classic Commodore Amiga experience..\n"+
      "All trademarks belong to their respective owners!"
      ); }
      else if (cmd == 'alias'){ term.echo("WIP: make short version of long commands/args"); }
      else if (cmd == 'assign'){
       switch (CURRENT_MODE){
+      case MODE_MIDI_STUDIO:
       case MODE_MIDI_MONITOR:
+      case MODE_MIDI_RUNTIME:
        term.echo("WIP: assign i.e. 0xFA midi byte to trigger function in the webpage");
        break;
       case MODE_AUX:
@@ -386,7 +472,7 @@ jQuery( function($){
      else if (cmd == 'CDTV')    { parent.location.assign("AmiGoDOS.php?amiga=CDTV&autoboot");}
      // use Amy for MIDI stuff like Music-X, Octamed, Scala etc..
      else if (cmd == 'amy')		{ parent.location.assign("AmiGoDOS.php?amiga=Amy");}
-     else if (cmd == 'Amy')		{ parent.location.assign("AmiGoDOS.php?amiga=Amy&mode=3&autoboot");}
+     else if (cmd == 'Amy')		{ parent.location.assign("AmiGoDOS.php?amiga=Amy&mode=5&autoboot");}
      else if (cmd == 'buffy')	{ parent.location.assign("AmiGoDOS.php?amiga=Buffy");}
      else if (cmd == 'Buffy')	{ parent.location.assign("AmiGoDOS.php?amiga=Buffy&autoboot");}
      else if (cmd == 'claire')	{ parent.location.assign("AmiGoDOS.php?amiga=Claire");}
