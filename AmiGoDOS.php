@@ -124,6 +124,8 @@ if(event.data.msg == 'serial_port_out')
 //   case 0xF0: //SYSEX
 //    break;
 //   default:
+// implement RUNMODE where after a ststusbyte PAIRS
+// of Key-Velocity need to be processed
     if (midi_byte_from_amiga > 0x7F){ //STATUS_BYTE
      status_nibble = midi_byte_from_amiga >> 4;
      channel_nibble = midi_byte_from_amiga & 0xf;
@@ -430,15 +432,26 @@ jQuery( function($){
           else if (cmd == 'about6'){ term.echo("AmiGoDOS for the Web uses JavaScript JQueryTerminal as versatile framework.. with AmiGoDOS syntax/functions..");}
            else if (cmd == 'about7'){ term.echo("a for Web usage simplified AmiGoDOS is just a nice nostalgic label for WIP to keep the momentum going..");}
             else if (cmd == 'about8'){ term.echo("with kind regards.. PTz(Peter Slootbeek)uAH");}
-     else if (cmd == 'lic'){ term.echo(
+     else if (cmd == 'lic'){
+     term.echo(
      "AmiGoDOS (TS0CA) licenses, attributions & more..\n"+
-     "This just-for-the-fun-project utilises the following frameworks:\n"+
+     "This just-for-the-fun-damen-tal-edu-art-zen-project utilises the following frameworks:\n"+
      "vAmigaWeb (GPL-3.0) by Mithrendal [ https://github.com/vAmigaWeb ]\n"+
      "Jquery.Terminal (MIT) by Jakub T. Jankiewicz [ https://github.com/jcubic/jquery.terminal ]\n"+
-     "You may use AmiGoDOS for free to Maintain & Preserve your Private Classic Commodore Amiga experience..\n"+
      "AmiGoDOS (TS0CA) by PTz(Peter Slootbeek)uAH [ https://github.com/PTz0uAH/AmiGoDOS ]\n"+
+     "You may use AmiGoDOS for free to maintain & preserve \"The Spirit Of Commodore Amiga\"..\n"+
+     "any usage outside (TS0CA) scope may need explicit oral consent..\n"+
+     "\"Sunny\" logo designed by Youp Slootbeek for PTz(SL02TBE2K-SYSTEMS)uAH..\n"+
+     "other gfx/art created/provided by \"Brother Gregorius\" [ https://www.facebook.com/genetic.wisdom ]\n"+
      "All trademarks belong to their respective owners!"
-     ); }
+     );
+     return $('<img src=\"SL02TBE2K-SYSTEMS_logo.png\" width=\"64\" height=\"88\">'+
+     '<img src=\"AmiGoDOS_logo.png\" width=\"88\" height=\"88\">'+
+     '<img src=\"vAmigaWeb_logo.png\" width=\"88\" height=\"88\">'+
+     '<a href=\"https://terminal.jcubic.pl/\" title=\"Click to visit the JQuery.Terminal support site in Poland\" target=\"_blank\"><img src=\"JQueryTerminal_logo.png\" width=\"88\" height=\"88\"></a>'+
+     '<a href=\"https://www.facebook.com/groups/612005812580097/\" title=\"AmiGoDOS is endorsed by the Admins of 47PAINFBAT.. Support our troops IYKWIM!\" target=\"_blank\"><img src=\"670613165.png\" width=\"88\" height=\"88\"></a>'
+     );
+     }
      else if (cmd == 'alias'){ term.echo("WIP: make short version of long commands/args"); }
      else if (cmd == 'assign'){
       switch (CURRENT_MODE){
