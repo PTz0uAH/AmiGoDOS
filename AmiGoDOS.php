@@ -55,6 +55,8 @@ const MODE_AUX_CONSOLE = 2;
 const MODE_MIDI_RUNTIME = 3;
 const MODE_DEBUG = 4;
 const MODE_MIDI_STUDIO = 5;
+//only for processing SYSEX not to be called directly
+const MODE_MIDI_STUDIO_SYSEX = 55;
 //var CURRENT_MODE = MODE_DEBUG;
 var CURRENT_MODE = Number("<?php echo $mode;?>"); //MODE_AUX_CONSOLE;
 var AMIGADOS_HELP_MODE = 0;
@@ -66,7 +68,8 @@ const user_mode = [
  "SERIAL_MODE_AUX_CONSOLE",
  "SERIAL_MODE_MIDI_RUNTIME",
  "SERIAL_MODE_DEBUG",
- "SERIAL_MODE_MIDI_STUDIO"
+ "SERIAL_MODE_MIDI_STUDIO",
+ "SERIAL_MODE_MIDI_STUDIO_SYSEX"
 //);
 ];
 //how to receive AUX: serial data from the Amiga formatted in a compact way (trimmed)
@@ -75,6 +78,8 @@ let count=0;
 let midi_byte_from_amiga = 0;
 let midi_running_status_note_on = false;
 let midi_running_status_note_off = false;
+let midi_sysex = false; //
+let midi_use_sysex = false;
 const midi_output_id =[];
 const midi_event_note_on=[];
 const midi_event_note_off=[];
@@ -83,6 +88,7 @@ const midi_event_control_change=[];
 const midi_event_program_change=[]; //1 databyte
 const midi_event_channel_aftertouch=[]; //1 databyte
 const midi_event_pitch_bend=[];
+const midi_event_sysex=[]; // lets try it
 window.addEventListener('message', event => {
 if(event.data.msg == 'serial_port_out')
 {
@@ -103,18 +109,7 @@ if(event.data.msg == 'serial_port_out')
    if (out_buffer.slice(-4)=="/S: "){term.set_prompt(out_buffer.trim());out_buffer="";}
    if (out_buffer.slice(-4)=="/K: "){term.set_prompt(out_buffer.trim());out_buffer="";}
   }
-//  if (out_buffer.includes("> ")==true){term.set_prompt(out_buffer.trim());out_buffer="";}
   if (out_buffer.slice(-2)=="> "){term.set_prompt(out_buffer.trim());out_buffer="";}
-  //term.echo(out_buffer, {newline: false});
-  //let i = 0;
-  //check_trigger: while(i < 4)
-  //{
-  // if (out_buffer.includes(PROMPT_TRIGGERS[i])==true){
-  //  term.set_prompt(out_buffer.trim());
-  //  out_buffer="";
-  //  break check_trigger;
-  // }
-  //}
   //Check if EndCLI was called
   if (out_buffer.includes("Process ")==true){
    if (out_buffer.includes(" ending")==true){term.set_prompt("> ");out_buffer="";}
@@ -122,115 +117,179 @@ if(event.data.msg == 'serial_port_out')
   break;
  case MODE_MIDI_STUDIO:
   midi_byte_from_amiga=event.data.value & 0xff ;
-//  switch (midi_byte_from_amiga){
-//   case 0xF0: //SYSEX
-//    break;
-//   default:
-// implement RUNNING-STATUS where after a ststusbyte PAIRS
-// of Key/Velocity values need to be processed..
-    if (midi_byte_from_amiga > 0x7F){ //STATUS_BYTE
-     status_nibble = midi_byte_from_amiga >> 4;
-     channel_nibble = midi_byte_from_amiga & 0xf;
-     switch(status_nibble){
-      case 0x09: //NOTE_ON
-       //turn off running status
-       midi_event_note_on[0]=midi_byte_from_amiga;
-       midi_running_status_note_on = true;
-       midi_running_status_note_off = false;
+  // implement RUNNING-STATUS where after a ststusbyte PAIRS
+  // of Key/Velocity values need to be processed..
+  if (midi_byte_from_amiga > 0x7F){ //STATUS_BYTE
+   status_msb_nibble = midi_byte_from_amiga >> 4; //not sure if msb but keep it for now
+   status_lsb_nibble = midi_byte_from_amiga & 0xf;
+   switch(status_msb_nibble){
+    case 0x9: //NOTE_ON
+     //turn off running status
+     midi_event_note_on[0]=midi_byte_from_amiga;
+     midi_running_status_note_on = true;
+     midi_running_status_note_off = false;
+     break;
+    case 0x8: //NOTE_OFF
+     midi_event_note_off[0]=midi_byte_from_amiga;
+     midi_running_status_note_on = false;
+     midi_running_status_note_off = true;
+     break;
+    case 0xA: //POLYPHONIC_AFTERTOUCH
+     midi_event_polyphonic_aftertouch[0]=midi_byte_from_amiga;
+     midi_running_status_note_on = false;
+     midi_running_status_note_off = false;
+     break;
+    case 0xB: //CONTROL_CHANGE
+     midi_event_control_change[0]=midi_byte_from_amiga;
+     midi_running_status_note_on = false;
+     midi_running_status_note_off = false;
+     break;
+    case 0xC: //PROGRAM_CHANGE
+     midi_event_program_change[0]=midi_byte_from_amiga;
+     midi_running_status_note_on = false;
+     midi_running_status_note_off = false;
+     break;
+    case 0xD: //CHANNEL_AFTERTOUCH
+     midi_event_channel_aftertouch[0]=midi_byte_from_amiga;
+     midi_running_status_note_on = false;
+     midi_running_status_note_off = false;
+     break;
+    case 0xE: //PITCH_BEND
+     midi_event_pitch_bend[0]=midi_byte_from_amiga;
+     midi_running_status_note_on = false;
+     midi_running_status_note_off = false;
+     break;
+    case 0xF: //SYSEX or REALTIME COMMAND
+     midi_running_status_note_on = false;
+     midi_running_status_note_off = false;
+     switch (status_lsb_nibble){
+      case 0x0: // START SYSTEN_EXCLUSIVE BLOCK
+       midi_event_sysex[0]=midi_byte_from_amiga;
+       midi_sysex = true;
        break;
-      case 0x08: //NOTE_OFF
-       midi_event_note_off[0]=midi_byte_from_amiga;
-       midi_running_status_note_on = false;
-       midi_running_status_note_off = true;
+      //SYSTEM_COMMON_MESSAGES
+      case 0x1: //MTC quarter-frame
        break;
-      case 0x0A: //POLYPHONIC_AFTERTOUCH
-       midi_event_polyphonic_aftertouch[0]=midi_byte_from_amiga;
+      case 0x2: //SPP
        break;
-      case 0x0B: //CONTROL_CHANGE
-       midi_event_control_change[0]=midi_byte_from_amiga;
+      case 0x3: //SONG_SELECT
        break;
-      case 0x0C: //PROGRAM_CHANGE
-       midi_event_program_change[0]=midi_byte_from_amiga;
+      case 0x4: //UNDEFINED
        break;
-      case 0x0D: //CHANNEL_AFTERTOUCH
-       midi_event_channel_aftertouch[0]=midi_byte_from_amiga;
+      case 0x5: //UNDEFINED
        break;
-      case 0x0E: //PITCH_BEND
-       midi_event_pitch_bend[0]=midi_byte_from_amiga;
+      case 0x6: //TUNE_REQUEST
+       break;
+      case 0x7: //EOX End Of eXclusive
+       break;
+      //SYSTEM_REALTIME_MESSAGES
+      case 0x8: //TIMING_CLOCK for now Music-X sending clocks is turned off
+       break;
+      case 0x9: //UNDEFINED1
+       break;
+      case 0xA: //START  we also use this from the MIDI Shell
+       break;
+      case 0xB: //CONTINUE idem..
+       break;
+      case 0xC: //STOP idem..
+       break;
+      case 0xD: //UNDEFINED2
+       break;
+      case 0xE: //ACTIVE_SENSING used to check physical connection status cables
+       break;
+      case 0xF: //SYSTEM_RESET
        break;
      }
-    }else{
-     //DATA_BYTE
-      if (midi_running_status_note_on == true){
-       switch (midi_event_note_on.length){ //NOTE_ON
-        case 1: midi_event_note_on[1]=midi_byte_from_amiga; break;
-        case 2:
-         midi_event_note_on[2]=midi_byte_from_amiga;
-         const output = midi.outputs.get(midi_output_id[0]);
-         output.send(midi_event_note_on); // sends the message
-         midi_event_note_on.length=1; //keep running status
-         break;
+     break;
+   }
+  }else{
+   //SYSEX DATA
+   if (midi_sysex == true){
+     midi_event_sysex[midi_event_sysex.length]=midi_byte_from_amiga;
+     switch (midi_byte_from_amiga){
+      case 0xF7:
+       // do something with the buffered sysex_msg
+       if (midi_use_sysex == true){
+        const output = midi.outputs.get(midi_output_id[0]);
+        output.send(midi_event_sysex); // sends the message
        }
-      }
-      if (midi_running_status_note_off == true){
-       switch (midi_event_note_off.length){ //NOTE_OFF
-        case 1: midi_event_note_off[1]=midi_byte_from_amiga; break;
-        case 2:
-         midi_event_note_off[2]=0x00;//midi_byte_from_amiga;
-         const output = midi.outputs.get(midi_output_id[0]);
-         output.send(midi_event_note_off); // sends the message
-         midi_event_note_off.length=1;
-         break;
-       }
-      }
-     switch (midi_event_polyphonic_aftertouch.length){ //POLYPHONIC_AFTERTOUCH
-      case 1: midi_event_polyphonic_aftertouch[1]=midi_byte_from_amiga; break;
+       midi_event_sysex.length=0; //just clear the buffer
+       midi_sysex = false;
+       break;
+     }
+   }
+   else
+   {
+   //DATA_BYTE
+    if (midi_running_status_note_on == true){
+     switch (midi_event_note_on.length){ //NOTE_ON
+      case 1: midi_event_note_on[1]=midi_byte_from_amiga; break;
       case 2:
-       midi_event_polyphonic_aftertouch[2]=midi_byte_from_amiga;
+       midi_event_note_on[2]=midi_byte_from_amiga;
        const output = midi.outputs.get(midi_output_id[0]);
-       output.send(midi_event_polyphonic_aftertouch);
-       midi_event_polyphonic_aftertouch.length=0;
+       output.send(midi_event_note_on); // sends the message
+       midi_event_note_on.length=1; //keep running status
        break;
      }
-     switch (midi_event_control_change.length){ //CONTROL_CHANGE
-      case 1: midi_event_control_change[1]=midi_byte_from_amiga; break;
+    }
+    if (midi_running_status_note_off == true){
+     switch (midi_event_note_off.length){ //NOTE_OFF
+      case 1: midi_event_note_off[1]=midi_byte_from_amiga; break;
       case 2:
-       midi_event_control_change[2]=midi_byte_from_amiga;
+       midi_event_note_off[2]=0x00;//midi_byte_from_amiga;
        const output = midi.outputs.get(midi_output_id[0]);
-       output.send(midi_event_control_change);
-       midi_event_control_change.length=0;
+       output.send(midi_event_note_off); // sends the message
+       midi_event_note_off.length=1;
        break;
      }
-     switch (midi_event_program_change.length){ //PROGRAM_CHANGE
-      case 1:
-       midi_event_program_change[1]=midi_byte_from_amiga;
-       //midi_event_program_change[2]=0x0;
-       const output = midi.outputs.get(midi_output_id[0]);
-       output.send(midi_event_program_change);
-       midi_event_program_change.length=0;
-       break;
-     }
-     switch (midi_event_channel_aftertouch.length){ //CHANNEL_AFTERTOUCH
-      case 1:
-       midi_event_channel_aftertouch[1]=midi_byte_from_amiga;
-       const output = midi.outputs.get(midi_output_id[0]);
-       output.send(midi_event_channel_aftertouch);
-       midi_event_channel_aftertouch.length=0;
-       break;
-     }
-     switch (midi_event_pitch_bend.length){ //PITCH_BEND
-      case 1: midi_event_pitch_bend[1]=midi_byte_from_amiga; break;
-      case 2:
-       midi_event_pitch_bend[2]=midi_byte_from_amiga;
-       const output = midi.outputs.get(midi_output_id[0]);
-       output.send(midi_event_pitch_bend);
-       midi_event_pitch_bend.length=0;
-       break;
-     }
-    };
-    break;
-//   }
-//   break;
+    }
+    switch (midi_event_polyphonic_aftertouch.length){ //POLYPHONIC_AFTERTOUCH
+     case 1: midi_event_polyphonic_aftertouch[1]=midi_byte_from_amiga; break;
+     case 2:
+      midi_event_polyphonic_aftertouch[2]=midi_byte_from_amiga;
+      const output = midi.outputs.get(midi_output_id[0]);
+      output.send(midi_event_polyphonic_aftertouch);
+      midi_event_polyphonic_aftertouch.length=0;
+      break;
+    }
+    switch (midi_event_control_change.length){ //CONTROL_CHANGE
+     case 1: midi_event_control_change[1]=midi_byte_from_amiga; break;
+     case 2:
+      midi_event_control_change[2]=midi_byte_from_amiga;
+      const output = midi.outputs.get(midi_output_id[0]);
+      output.send(midi_event_control_change);
+      midi_event_control_change.length=0;
+      break;
+    }
+    switch (midi_event_program_change.length){ //PROGRAM_CHANGE
+     case 1:
+      midi_event_program_change[1]=midi_byte_from_amiga;
+      //midi_event_program_change[2]=0x0;
+      const output = midi.outputs.get(midi_output_id[0]);
+      output.send(midi_event_program_change);
+      midi_event_program_change.length=0;
+      break;
+    }
+    switch (midi_event_channel_aftertouch.length){ //CHANNEL_AFTERTOUCH
+     case 1:
+      midi_event_channel_aftertouch[1]=midi_byte_from_amiga;
+      const output = midi.outputs.get(midi_output_id[0]);
+      output.send(midi_event_channel_aftertouch);
+      midi_event_channel_aftertouch.length=0;
+      break;
+    }
+    switch (midi_event_pitch_bend.length){ //PITCH_BEND
+     case 1: midi_event_pitch_bend[1]=midi_byte_from_amiga; break;
+     case 2:
+      midi_event_pitch_bend[2]=midi_byte_from_amiga;
+      const output = midi.outputs.get(midi_output_id[0]);
+      output.send(midi_event_pitch_bend);
+      midi_event_pitch_bend.length=0;
+      break;
+    }
+   }
+  };
+  break;
  case MODE_MIDI_RUNTIME:
  //disabled
   break;
@@ -439,7 +498,7 @@ jQuery( function($){
       else if (cmd == 'about2'){ term.echo("tried to keep the AmigaDOS syntax somehow alive.. to get things done on MS side.. even in Amiga GUI style");}
        else if (cmd == 'about3'){ term.echo("used to connect to Amiga (FS-UAE) via TCP-COMPORT and relay to MIDI or REMOTE-CONSOLE..");}
         else if (cmd == 'about4'){ term.echo("now using it to connect to vAmigaWeb..AUX/SER/MIDI for Classic Amiga Web usage and using the experience..");}
-         else if (cmd == 'about5'){ term.echo("to get it also working for TAWS in the end.. on behalf of the ultimate Amiga Anywhere experience IYKWIM..");}
+         else if (cmd == 'about5'){ term.echo("IT also works for our version of TAWS.. on behalf of the ultimate Amiga Anywhere experience IYKWIM..");}
           else if (cmd == 'about6'){ term.echo("AmiGoDOS for the Web uses JavaScript JQueryTerminal as versatile framework.. with AmiGoDOS syntax/functions..");}
            else if (cmd == 'about7'){ term.echo("a for Web usage simplified AmiGoDOS is just a nice nostalgic label for WIP to keep the momentum going..");}
             else if (cmd == 'about8'){ term.echo("with kind regards.. PTz(Peter Slootbeek)uAH");}
