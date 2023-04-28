@@ -115,6 +115,21 @@ if(event.data.msg == 'serial_port_out')
    if (out_buffer.includes(" ending")==true){term.set_prompt("> ");out_buffer="";}
   }
   break;
+ case MODE_MIDI_STUDIO_SYSEX:
+     midi_event_sysex[midi_event_sysex.length]=midi_byte_from_amiga;
+     switch (midi_byte_from_amiga){
+      case 0xF7:
+       // do something with the buffered sysex_msg
+       if (midi_use_sysex == true){
+        const output = midi.outputs.get(midi_output_id[0]);
+        output.send(midi_event_sysex); // sends the message
+       }
+       midi_event_sysex.length=0; //just clear the buffer
+       midi_sysex = false;
+       CURRENT_MODE = MODE_MIDI_STUDIO; //back to normal midi handling
+       break;
+     }
+  break;
  case MODE_MIDI_STUDIO:
   midi_byte_from_amiga=event.data.value & 0xff ;
   // implement RUNNING-STATUS where after a ststusbyte PAIRS
@@ -166,6 +181,7 @@ if(event.data.msg == 'serial_port_out')
       case 0x0: // START SYSTEN_EXCLUSIVE BLOCK
        midi_event_sysex[0]=midi_byte_from_amiga;
        midi_sysex = true;
+       CURRENT_MODE = MODE_MIDI_STUDIO_SYSEX;
        break;
       //SYSTEM_COMMON_MESSAGES
       case 0x1: //MTC quarter-frame
@@ -203,23 +219,11 @@ if(event.data.msg == 'serial_port_out')
      break;
    }
   }else{
-   //SYSEX DATA
-   if (midi_sysex == true){
-     midi_event_sysex[midi_event_sysex.length]=midi_byte_from_amiga;
-     switch (midi_byte_from_amiga){
-      case 0xF7:
-       // do something with the buffered sysex_msg
-       if (midi_use_sysex == true){
-        const output = midi.outputs.get(midi_output_id[0]);
-        output.send(midi_event_sysex); // sends the message
-       }
-       midi_event_sysex.length=0; //just clear the buffer
-       midi_sysex = false;
-       break;
-     }
-   }
-   else
-   {
+   //0xF0 initiated SYSEX DATA IS HANDLED IN SUB MODE 55
+   //if (midi_sysex == true){
+   //}
+   //else
+   //{
    //DATA_BYTE
     if (midi_running_status_note_on == true){
      switch (midi_event_note_on.length){ //NOTE_ON
@@ -287,7 +291,7 @@ if(event.data.msg == 'serial_port_out')
       midi_event_pitch_bend.length=0;
       break;
     }
-   }
+   //}
   };
   break;
  case MODE_MIDI_RUNTIME:
@@ -503,23 +507,26 @@ jQuery( function($){
            else if (cmd == 'about7'){ term.echo("a for Web usage simplified AmiGoDOS is just a nice nostalgic label for WIP to keep the momentum going..");}
             else if (cmd == 'about8'){ term.echo("with kind regards.. PTz(Peter Slootbeek)uAH");}
      else if (cmd == 'lic'){
+     new Audio('Art/Y0_UP.mp3').play();
      term.echo(
      "AmiGoDOS (TS0CA) licenses, attributions & more..\n"+
      "This just-for-the-fun-damen-tal-edu-art-zen-project utilises the following frameworks:\n"+
-     "vAmigaWeb (GPL-3.0) by Mithrendal [ https://github.com/vAmigaWeb ]\n"+
+     "vAmigaWeb (GPL-3.0) by Mithrendal [ https://github.com/vAmigaWeb/vAmigaWeb ]\n"+
      "Jquery.Terminal (MIT) by Jakub T. Jankiewicz [ https://github.com/jcubic/jquery.terminal ]\n"+
      "AmiGoDOS (TS0CA) by PTz(Peter Slootbeek)uAH [ https://github.com/PTz0uAH/AmiGoDOS ]\n"+
      "You may use AmiGoDOS for free to maintain & preserve \"The Spirit Of Commodore Amiga\"..\n"+
      "any usage outside (TS0CA) scope may need explicit oral consent..\n"+
-     "\"Sunny\" logo designed by Youp Slootbeek for PTz(SL02TBE2K-SYSTEMS)uAH..\n"+
+     "\"Yo..up!\" tune performed by \"Maartje Slootbeek & The BigDreamers\" for PTz(SL02TBE2K-SYSTEMS)uAH..\n"+
+     "\"Sunny\" logo (re)designed by Youp Slootbeek for PTz(SL02TBE2K-SYSTEMS)uAH..\n"+
      "other gfx/art created/provided by \"Brother Gregorius\" [ https://www.facebook.com/genetic.wisdom ]\n"+
      "All trademarks belong to their respective owners!"
      );
-     return $('<img src=\"SL02TBE2K-SYSTEMS_logo.png\" width=\"64\" height=\"88\">'+
-     '<img src=\"AmiGoDOS_logo.png\" width=\"88\" height=\"88\">'+
-     '<img src=\"vAmigaWeb_logo.png\" width=\"88\" height=\"88\">'+
-     '<a href=\"https://terminal.jcubic.pl/\" title=\"Click to visit the JQuery.Terminal support site in Poland\" target=\"_blank\"><img src=\"JQueryTerminal_logo.png\" width=\"88\" height=\"88\"></a>'+
-     '<a href=\"https://www.facebook.com/groups/612005812580097/\" title=\"AmiGoDOS is endorsed by the Admins of 47PAINFBAT.. Support our troops IYKWIM!\" target=\"_blank\"><img src=\"670613165.png\" width=\"88\" height=\"88\"></a>'
+     return $('<img src=\"Art/SL02TBE2K-SYSTEMS_logo.png\" width=\"64\" height=\"88\">'+
+     '<img src=\"Art/AmiGoDOS_logo.png\" width=\"88\" height=\"88\">'+
+     '<a href=\"http://tsoca.amigoxpe.net/\" title=\"Visit our AmiGoXPE Salvation Platform (TAWS-based)..\" target=\"_blank\"><img src=\"Art/TS0CA_Model_MA2RTJE2K.png\" width=\"88\" height=\"88\"></a>'+
+     '<a href=\"https://github.com/vAmigaWeb\" title=\"Click to visit the vAmigaWeb support site on GitHub\" target=\"_blank\"><img src=\"Art/TS0CA_vAmigaWeb_THANKS.png\" width=\"88\" height=\"88\"></a>'+
+     '<a href=\"https://terminal.jcubic.pl/\" title=\"Click if you wish to visit the JQuery.Terminal non-free support site in Poland\" target=\"_blank\"><img src=\"Art/TS0CA_JQueryTerminal_THANKS.png\" width=\"88\" height=\"88\"></a>'+
+     '<a href=\"https://www.facebook.com/groups/612005812580097/\" title=\"AmiGoDOS is endorsed by the Admins of 47PAINFBAT.. Support (y)our Troops!\" target=\"_blank\"><img src=\"Art/TS0CA_670613165_TANKS.png\" width=\"88\" height=\"88\"></a>'
      );
      }
      else if (cmd == 'alias'){ term.echo("WIP: make short version of long commands/args"); }
@@ -689,7 +696,7 @@ jQuery( function($){
 </div>
 <div id="vAmigaWebContainer" style="display: flex;align-items: center;justify-content: left;">
  <div id="container">
-  <img id="<?php echo $amiga;?>" style="width:960px; height:633px" src="img/C1084_<?php echo $amiga;?>.gif"
+  <img id="<?php echo $amiga;?>" style="width:960px; height:633px" src="Art/C1084_<?php echo $amiga;?>.gif"
    ontouchstart="touched=true"
    onclick="<?php echo $config_1;?>"
   />
