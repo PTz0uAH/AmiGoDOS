@@ -2,6 +2,7 @@
  $usermode = "SERIAL_MODE_AUX";
  $server_name = $_ENV['SERVER_NAME'];
  $prompt = '0.SYS:> ';
+ //we need to now if AmiGoDOS is called from within the TAWS environment
  if (!isset($_GET['mode'])){$mode=2;}else{$mode=$_GET['mode'];}
  if (!isset($_GET['amiga'])){$amiga='Buffy';}else{$amiga=$_GET['amiga'];}
  //behaviour.. if set then autoboot
@@ -16,6 +17,17 @@
   $boot = $_GET['boot'];
   $snapshot="url:'$boot'";
  }
+ if (!isset($_ENV['HTTP_REFERER'])){ $REFERRER="EMPTY"; $TAWS_THANKS1="";$TAWS_THANKS2="";}
+ else{ $REFERRER=$_ENV['HTTP_REFERER']; }
+ //for TAWS detection we use /WB.php from subdir but the original TAWS uses /WB.html from root
+ if (str_contains($REFERRER, '/WB.')) {
+  $AmiGoTAWS = '<a href=\"https://amigoxpe.net/TS0CA/AmiGoDOS.php\" title=\"Jump to AmiGoDOS (Standalone)..\" target=\"_blank\"><img src=\"Art/TS0CA_Model_MA2RTJE2K.png\" width=\"88\" height=\"88\"></a>';
+  $TAWS_THANKS1='TAWS (?) developed by Michael Rupp [ https://taws.ch ]\n';
+  $TAWS_THANKS2='<a href=\"https://taws.ch\" title=\"Visit the latest TAWS in Switzerland..\" target=\"_blank\"><img src=\"Art/TS0CA_TAWS_THANKS.png\" width=\"88\" height=\"88\"></a>';
+ }
+ else{
+  $AmiGoTAWS = '<a href=\"http://tsoca.amigoxpe.net/\" title=\"Visit our AmiGoXPE Salvation Platform (TAWS-based)..\" target=\"_blank\"><img src=\"Art/TS0CA_Model_MA2RTJE2K.png\" width=\"88\" height=\"88\"></a>';
+}
   //the emulator files are in the same folder as the run.html
   //you can also enable this and disable the players toolbar (see styles section above)
 $config_1="
@@ -104,7 +116,7 @@ if(event.data.msg == 'serial_port_out')
    break;
   }
   if (AMIGADOS_HELP_MODE==1){
-   //AmigaDOS switches for cmdline help mode [CMD ?]
+   //AmigaDOS switches for AUX CONSOLE cmdline help mode [CMD ?]
    if (out_buffer.slice(-4)=="/N: "){term.set_prompt(out_buffer.trim());out_buffer="";}
    if (out_buffer.slice(-4)=="/S: "){term.set_prompt(out_buffer.trim());out_buffer="";}
    if (out_buffer.slice(-4)=="/K: "){term.set_prompt(out_buffer.trim());out_buffer="";}
@@ -295,7 +307,11 @@ if(event.data.msg == 'serial_port_out')
   };
   break;
  case MODE_MIDI_RUNTIME:
- //disabled
+ //disabled but here comes the special modus on demand..
+ //Amiga Music-X is OOTB Supported in MODE_MIDI_STUDIO
+ //but maybe ScalaMM, Octamed or even MidiPlayer need other settings
+ //so a placeholder for future usage..
+  term.echo("This mode is not enabled..");
   break;
  case MODE_MIDI_MONITOR:
   midi_byte_from_amiga=event.data.value & 0xff ;
@@ -506,11 +522,16 @@ jQuery( function($){
           else if (cmd == 'about6'){ term.echo("AmiGoDOS for the Web uses JavaScript JQueryTerminal as versatile framework.. with AmiGoDOS syntax/functions..");}
            else if (cmd == 'about7'){ term.echo("a for Web usage simplified AmiGoDOS is just a nice nostalgic label for WIP to keep the momentum going..");}
             else if (cmd == 'about8'){ term.echo("with kind regards.. PTz(Peter Slootbeek)uAH");}
+     else if (cmd == 'thx'){
+      term.echo("Thank you for beta-testing AmiGoDOS..");
+      break;
+     }
      else if (cmd == 'lic'){
      new Audio('Art/Y0_UP.mp3').play();
      term.echo(
      "AmiGoDOS (TS0CA) licenses, attributions & more..\n"+
      "This just-for-the-fun-damen-tal-edu-art-zen-project utilises the following frameworks:\n"+
+     "<?php echo "$TAWS_THANKS1";?>"+
      "vAmigaWeb (GPL-3.0) by Mithrendal [ https://github.com/vAmigaWeb/vAmigaWeb ]\n"+
      "Jquery.Terminal (MIT) by Jakub T. Jankiewicz [ https://github.com/jcubic/jquery.terminal ]\n"+
      "AmiGoDOS (TS0CA) by PTz(Peter Slootbeek)uAH [ https://github.com/PTz0uAH/AmiGoDOS ]\n"+
@@ -523,9 +544,10 @@ jQuery( function($){
      );
      return $('<img src=\"Art/SL02TBE2K-SYSTEMS_logo.png\" width=\"64\" height=\"88\">'+
      '<img src=\"Art/AmiGoDOS_logo.png\" width=\"88\" height=\"88\">'+
-     '<a href=\"http://tsoca.amigoxpe.net/\" title=\"Visit our AmiGoXPE Salvation Platform (TAWS-based)..\" target=\"_blank\"><img src=\"Art/TS0CA_Model_MA2RTJE2K.png\" width=\"88\" height=\"88\"></a>'+
+     '<?php echo "$AmiGoTAWS";?>'+
      '<a href=\"https://github.com/vAmigaWeb\" title=\"Click to visit the vAmigaWeb support site on GitHub\" target=\"_blank\"><img src=\"Art/TS0CA_vAmigaWeb_THANKS.png\" width=\"88\" height=\"88\"></a>'+
-     '<a href=\"https://terminal.jcubic.pl/\" title=\"Click if you wish to visit the JQuery.Terminal non-free support site in Poland\" target=\"_blank\"><img src=\"Art/TS0CA_JQueryTerminal_THANKS.png\" width=\"88\" height=\"88\"></a>'+
+     '<?php echo "$TAWS_THANKS2";?>'+
+     '<a href=\"https://terminal.jcubic.pl/\" title=\"Click if you wish to visit the JQuery.Terminal support site in Poland\" target=\"_blank\"><img src=\"Art/TS0CA_JQueryTerminal_THANKS.png\" width=\"88\" height=\"88\"></a>'+
      '<a href=\"https://www.facebook.com/groups/612005812580097/\" title=\"AmiGoDOS is endorsed by the Admins of 47PAINFBAT.. Support (y)our Troops!\" target=\"_blank\"><img src=\"Art/TS0CA_670613165_TANKS.png\" width=\"88\" height=\"88\"></a>'
      );
      }
