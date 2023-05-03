@@ -21,12 +21,12 @@
  else{ $REFERRER=$_ENV['HTTP_REFERER']; }
  //for TAWS detection we use /WB.php from subdir but the original TAWS uses /WB.html from root
  if (str_contains($REFERRER, '/WB.')) {
-  $AmiGoTAWS = '<a href=\"https://amigoxpe.net/TS0CA/AmiGoDOS.php\" title=\"Jump to AmiGoDOS (Standalone)..\" target=\"_blank\"><img src=\"Art/TS0CA_Model_MA2RTJE2K.png\" width=\"88\" height=\"88\"></a>';
+  $AmiGoTAWS = '<a href=\"https://'.$server_name.'/TS0CA/AmiGoDOS.php\" title=\"Jump to AmiGoDOS (Standalone)..\" target=\"_blank\"><img src=\"Art/TS0CA_Model_MA2RTJE2K.png\" width=\"88\" height=\"88\"></a>';
   $TAWS_THANKS1='TAWS (?) developed by Michael Rupp [ https://taws.ch ]\n';
   $TAWS_THANKS2='<a href=\"https://taws.ch\" title=\"Visit the latest TAWS in Switzerland..\" target=\"_blank\"><img src=\"Art/TS0CA_TAWS_THANKS.png\" width=\"88\" height=\"88\"></a>';
  }
  else{
-  $AmiGoTAWS = '<a href=\"http://tsoca.amigoxpe.net/\" title=\"Visit our AmiGoXPE Salvation Platform (TAWS-based)..\" target=\"_blank\"><img src=\"Art/TS0CA_Model_MA2RTJE2K.png\" width=\"88\" height=\"88\"></a>';
+  $AmiGoTAWS = '<a href=\"http://tsoca.'.$server_name.'\" title=\"Visit our AmiGoXPE Salvation Platform (TAWS-based)..\" target=\"_blank\"><img src=\"Art/TS0CA_Model_MA2RTJE2K.png\" width=\"88\" height=\"88\"></a>';
 }
   //the emulator files are in the same folder as the run.html
   //you can also enable this and disable the players toolbar (see styles section above)
@@ -93,6 +93,8 @@ let midi_running_status_note_off = false;
 let midi_sysex = false; //
 let midi_use_sysex = false;
 const midi_output_id =[];
+//const midi_in_event_note_on=[];
+//const midi_in_event_note_off=[];
 const midi_event_note_on=[];
 const midi_event_note_off=[];
 const midi_event_polyphonic_aftertouch=[];
@@ -436,11 +438,12 @@ function onMIDIMessage(event) {
  case MODE_MIDI_RUNTIME:
   break;
  case MODE_MIDI_STUDIO:
- let vAmigaWeb_window = document.getElementById("vAmigaWeb").contentWindow;
-  for (const character of event.data){
+   let vAmigaWeb_window = document.getElementById("vAmigaWeb").contentWindow;
+   for (const character of event.data){
    vAmigaWeb_window.postMessage({cmd:"ser:", byte: character}, "*");
-  }
-  break;
+   //vAmigaWeb_window.postMessage({cmd:"ser:", bytes: event.data}, "*");
+   }
+   break;
  }
 }
 
