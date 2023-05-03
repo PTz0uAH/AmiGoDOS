@@ -425,11 +425,23 @@ function apiMIDI_INS_OUTS( midiAccess ) {
 }
 
 function onMIDIMessage(event) {
+ switch (CURRENT_MODE) {
+ case MODE_MIDI_MONITOR:
   let str = `MIDI message received at timestamp ${event.timeStamp}[${event.data.length} bytes]: `;
   for (const character of event.data) {
     str += `0x${character.toString(16)} `;
   }
   term.echo(str);
+  break;
+ case MODE_MIDI_RUNTIME:
+  break;
+ case MODE_MIDI_STUDIO:
+ let vAmigaWeb_window = document.getElementById("vAmigaWeb").contentWindow;
+  for (const character of event.data){
+   vAmigaWeb_window.postMessage({cmd:"ser:", byte: character}, "*");
+  }
+  break;
+ }
 }
 
 function startLoggingMIDIInput(midiAccess, indexOfPort) {
@@ -622,6 +634,7 @@ jQuery( function($){
         if (command == 'help') {term.echo('Available MIDI commands:\n'+
         'exit [leave MIDI mode]\n'+
         'info [show MIDI Inputs/Outputs]\n'+
+        'midi_in_open [monitor data received from Inputs]\n'+
         'start [send MIDI_START byte to the Amiga serial input]\n'+
         'cont [send MIDI_CONTINUE byte to the Amiga serial input]\n'+
         'stop [send MIDI_STOP byte to the Amiga serial input]');}
@@ -630,6 +643,7 @@ jQuery( function($){
         else if (command == 'cont') {ADOS_TX_MIDI(command);}
         else if (command == 'stop') {ADOS_TX_MIDI(command);}
         else if (command == 'info') {apiMIDI_INS_OUTS(midi);}
+        else if (command == 'midi_in_open') {startLoggingMIDIInput(midi,0);}
         //else if (command == 'midi_out_open') {startMIDIOutput(midi,0);}
 //        else if (command == 'midi_out_close') {startMIDIOutput(midi,0);}
         else if (command == 'exit') {term.pop();}
