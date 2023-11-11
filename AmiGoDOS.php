@@ -22,7 +22,7 @@
  //for TAWS detection we use /WB.php from subdir but the original TAWS uses /WB.html from root
  if (str_contains($REFERRER, '/WB.')) {
   $AmiGoTAWS = '<a href=\"https://'.$server_name.'/TS0CA/AmiGoDOS.php\" title=\"Jump to AmiGoDOS (Standalone)..\" target=\"_blank\"><img src=\"Art/TS0CA_Model_MA2RTJE2K.png\" width=\"88\" height=\"88\"></a>';
-  $TAWS_THANKS1='TAWS (?) developed by Michael Rupp [ https://taws.ch ]\n';
+  $TAWS_THANKS1='Thanks TAWS-developer Michael Rupp! [ https://taws.ch ]\n';
   $TAWS_THANKS2='<a href=\"https://taws.ch\" title=\"Visit the latest TAWS in Switzerland..\" target=\"_blank\"><img src=\"Art/TS0CA_TAWS_THANKS.png\" width=\"88\" height=\"88\"></a>';
  }
  else{
@@ -58,7 +58,9 @@ $config_1="
 <script src="js/keyboard.js"></script>
 <script>
 var term;
+var serial = null;  // global SERIALAccess object
 var midi = null;  // global MIDIAccess object
+const ados_version = 20231111;
 const server_name = "<?php echo $server_name;?>"
 //var PROMPT_TRIGGERS = ["> ","/N ","S/ ","/K "];
 const MODE_AUX = 0;
@@ -67,6 +69,10 @@ const MODE_AUX_CONSOLE = 2;
 const MODE_MIDI_RUNTIME = 3;
 const MODE_DEBUG = 4;
 const MODE_MIDI_STUDIO = 5;
+//experimental mode to communicate between 2 embedded vAmigaWeb instances
+const MODE_AMIGONET = 6;
+//experimental mode to communicate between 2 embedded vAmigaWeb instances
+const MODE_HARDWARE = 7;
 //only for processing SYSEX not to be called directly
 const MODE_MIDI_STUDIO_SYSEX = 55;
 //var CURRENT_MODE = MODE_DEBUG;
@@ -81,6 +87,8 @@ const user_mode = [
  "SERIAL_MODE_MIDI_RUNTIME",
  "SERIAL_MODE_DEBUG",
  "SERIAL_MODE_MIDI_STUDIO",
+ "SERIAL_MODE_AMIGONET",
+ "SERIAL_MODE_HARDWARE",
  "SERIAL_MODE_MIDI_STUDIO_SYSEX"
 //);
 ];
@@ -308,6 +316,9 @@ if(event.data.msg == 'serial_port_out')
    //}
   };
   break;
+ case MODE_AMIGONET:
+  term.echo("WIP.. this sutosensing mode enables a duplex serial (nullmodem/midi)connection at 31250 BAUD between multiple vAmigaWeb instances..");
+  break;
  case MODE_MIDI_RUNTIME:
  //disabled but here comes the special modus on demand..
  //Amiga Music-X is OOTB Supported in MODE_MIDI_STUDIO
@@ -416,6 +427,7 @@ function GET_MIDI_OUTPUTS( midiAccess ) {
     );
   }
 }
+
 function apiMIDI_INS_OUTS( midiAccess ) {
  GET_MIDI_OUTPUTS(midiAccess);
  GET_MIDI_INPUTS(midiAccess);
@@ -423,6 +435,17 @@ function apiMIDI_INS_OUTS( midiAccess ) {
 //  const input = entry[1];
 //  term.echo(input.id);
 //}
+
+}
+
+function apiMIDI_INIT( midiAccess ) {
+		// request MIDI access
+		if(navigator.requestMIDIAccess){
+			navigator.requestMIDIAccess({sysex: false}).then(onMIDISuccess, onMIDIFailure);
+		}
+		else {
+			alert("No MIDI support in your browser.");
+		}
 
 }
 
@@ -461,8 +484,24 @@ function startMIDIOutput(midiAccess, indexOfPort) {
   output.open();
   //break;
  }
-
 }
+
+function START_SERIAL( serAccess ) {
+  if ("serial" in navigator) {
+  // The Web Serial API is supported.
+   navigator.serial.getPorts().then((ports) => {
+   // Initialize the list of available ports with `ports` on page load.
+   });
+   term.echo('HARDWARE SERIAL support enabled.');
+   // Prompt user to select any serial port. major bug when using await navigator.serial.requestPort();
+   const port = navigator.serial.requestPort();
+  }
+  else {
+   term.echo('No HARDWARE SERIAL support in your browser.');
+   //alert("No SERIAL support in your browser.");
+  }
+}
+
 // local functions when not connected to AUX:
 function ADOS_ALIAS(key, value){
 }
@@ -475,7 +514,14 @@ function TS0CA(modelID='Buffy') {
  case MODE_MIDI_MONITOR:
  case MODE_MIDI_RUNTIME:
  case MODE_MIDI_STUDIO:
-  navigator.requestMIDIAccess().then( onMIDISuccess, onMIDIFailure );
+		// request MIDI access
+		if(navigator.requestMIDIAccess){
+			navigator.requestMIDIAccess({sysex: false}).then(onMIDISuccess, onMIDIFailure);
+		}
+		else {
+			alert("No MIDI support in your browser.");
+		}
+//  navigator.requestMIDIAccess().then( onMIDISuccess, onMIDIFailure );
   break;
  }
  const modelAmiga = document.getElementById(modelID);
@@ -524,7 +570,7 @@ jQuery( function($){
     switch(command_arr.length){
     case 1:
      if (cmd == 'help') { term.echo("AmiGoDOS commands:\n"+
-     " alias, assign, cls, echo, exit, help, prompt,\n"+
+     " alias, assign, cls, echo, exit, help, prompt, version\n"+
      " clear, click, close, engage, logout, mode, lic\n"+
      "Available Amiga's by Name: amy, buffy, claire, daisy, eva, faith, gwen\n"+
      "Available Amiga's by Type: a500, a600, a1000, a2000, a3000, cdtv\n"+
@@ -546,14 +592,14 @@ jQuery( function($){
      term.echo(
      "AmiGoDOS (TS0CA) licenses, attributions & more..\n"+
      "This just-for-the-fun-damen-tal-edu-art-zen-project utilises the following frameworks:\n"+
-     "<?php echo "$TAWS_THANKS1";?>"+
+     "TAWS by Michael Rupp! [ https://taws.ch ]\n"+
      "vAmigaWeb (GPL-3.0) by Mithrendal [ https://github.com/vAmigaWeb/vAmigaWeb ]\n"+
      "Jquery.Terminal (MIT) by Jakub T. Jankiewicz [ https://github.com/jcubic/jquery.terminal ]\n"+
      "AmiGoDOS (TS0CA) by PTz(Peter Slootbeek)uAH [ https://github.com/PTz0uAH/AmiGoDOS ]\n"+
      "You may use AmiGoDOS for free to maintain & preserve \"The Spirit Of Commodore Amiga\"..\n"+
      "any usage outside (TS0CA) scope may need explicit oral consent..\n"+
-     "\"Yo..up!\" tune performed by \"Maartje Slootbeek & The BigDreamers\" for PTz(SL02TBE2K-SYSTEMS)uAH..\n"+
-     "\"Sunny\" logo (re)designed by Youp Slootbeek for PTz(SL02TBE2K-SYSTEMS)uAH..\n"+
+     "\"Yo..up!\" tune performed by \"Maartje2K& The BigDreamers\" for PTz(SL02TBE2K-SYSTEMS)uAH..\n"+
+     "\"Sunny\" logo (re)designed by Youp for PTz(SL02TBE2K-SYSTEMS)uAH..\n"+
      "other gfx/art created/provided by \"Brother Gregorius\" [ https://www.facebook.com/genetic.wisdom ]\n"+
      "All trademarks belong to their respective owners!"
      );
@@ -561,11 +607,12 @@ jQuery( function($){
      '<img src=\"Art/AmiGoDOS_logo.png\" width=\"88\" height=\"88\">'+
      '<?php echo "$AmiGoTAWS";?>'+
      '<a href=\"https://github.com/vAmigaWeb\" title=\"Click to visit the vAmigaWeb support site on GitHub\" target=\"_blank\"><img src=\"Art/TS0CA_vAmigaWeb_THANKS.png\" width=\"88\" height=\"88\"></a>'+
-     '<?php echo "$TAWS_THANKS2";?>'+
+     '<a href=\"https://taws.ch\" title=\"Visit the latest TAWS in Switzerland..\" target=\"_blank\"><img src=\"Art/TS0CA_TAWS_THANKS.png\" width=\"88\" height=\"88\"></a>'+
      '<a href=\"https://terminal.jcubic.pl/\" title=\"Click if you wish to visit the JQuery.Terminal support site in Poland\" target=\"_blank\"><img src=\"Art/TS0CA_JQueryTerminal_THANKS.png\" width=\"88\" height=\"88\"></a>'+
      '<a href=\"https://www.facebook.com/groups/612005812580097/\" title=\"AmiGoDOS is endorsed by the Admins of 47PAINFBAT.. Support (y)our Troops!\" target=\"_blank\"><img src=\"Art/TS0CA_670613165_TANKS.png\" width=\"88\" height=\"88\"></a>'
      );
      }
+     else if (cmd == 'version'){term.echo(ados_version);}
      else if (cmd == 'alias'){ term.echo("WIP: make short version of long commands/args"); }
      else if (cmd == 'assign'){
       switch (CURRENT_MODE){
@@ -631,6 +678,21 @@ jQuery( function($){
        { prompt: 'FTP> ', name: 'ftp' }
       );
      }
+     else if (cmd == 'ser'){
+      term.push(
+       function(command, term) {
+        if (command == 'help') {term.echo('Available SERIAL commands:\n'+
+        'exit [leave SER mode]\n'+
+        'init [start SER Inputs/Outputs]\n'+
+        'cls [clear shell]');}
+        else if (command == 'cls'){ term.clear(); term.echo("AmiGoDOS - Developer Shell [" + user_mode[CURRENT_MODE] + "]"); }
+        else if (command == 'init') {START_SERIAL(serial);}
+        else if (command == 'exit') {term.pop();}
+        else { term.echo('unknown SER command ' + command); }
+       },
+       { prompt: 'SER> ', name: 'ser' }
+      );
+     }
      else if (cmd == 'midi'){
       term.push(
        function(command, term) {
@@ -646,6 +708,7 @@ jQuery( function($){
         else if (command == 'cont') {ADOS_TX_MIDI(command);}
         else if (command == 'stop') {ADOS_TX_MIDI(command);}
         else if (command == 'info') {apiMIDI_INS_OUTS(midi);}
+        else if (command == 'init') {apiMIDI_INIT(midi);}
         else if (command == 'midi_in_open') {startLoggingMIDIInput(midi,0);}
         //else if (command == 'midi_out_open') {startMIDIOutput(midi,0);}
 //        else if (command == 'midi_out_close') {startMIDIOutput(midi,0);}
@@ -743,4 +806,3 @@ jQuery( function($){
 </div>
 </body>
 </html>
-
