@@ -11,7 +11,7 @@
  if ( !isset($_GET['boot']) ){
   $boot = '';
   $snapshot="     buttons: [
-   {run: true, script:`global_apptitle='AmiGoXPE Salvation Platform ($amiga)';action('1940ms=>restore_last_snapshot');`}
+   {run: true, script:`global_apptitle='$amiga';action('5000ms=>restore_last_snapshot');`}
   ]";
  }else{
   $boot = $_GET['boot'];
@@ -39,7 +39,7 @@ $config_1="
      x_wait_for_kickstart_injection:true,
      navbar:false,
      wide:true,
-     border:0.3,
+     border:false,
      mouse:true,
      port2:false,
      $snapshot
@@ -60,7 +60,11 @@ $config_1="
 var term;
 var serial = null;  // global SERIALAccess object
 var midi = null;  // global MIDIAccess object
-const ados_version = 20231111;
+var this_frame = null;
+var that_frame = null;
+var vAmigaWeb1 = null;
+var vAmigaWeb2 = null;
+const ados_version = 20231122;
 const server_name = "<?php echo $server_name;?>"
 //var PROMPT_TRIGGERS = ["> ","/N ","S/ ","/K "];
 const MODE_AUX = 0;
@@ -73,6 +77,8 @@ const MODE_MIDI_STUDIO = 5;
 const MODE_AMIGONET = 6;
 //experimental mode to communicate between 2 embedded vAmigaWeb instances
 const MODE_HARDWARE = 7;
+const MODE_NULLMODEM1 = 8;
+const MODE_NULLMODEM2 = 9;
 //only for processing SYSEX not to be called directly
 const MODE_MIDI_STUDIO_SYSEX = 55;
 //var CURRENT_MODE = MODE_DEBUG;
@@ -89,6 +95,8 @@ const user_mode = [
  "SERIAL_MODE_MIDI_STUDIO",
  "SERIAL_MODE_AMIGONET",
  "SERIAL_MODE_HARDWARE",
+ "SERIAL_MODE_NULLMODEM1",
+ "SERIAL_MODE_NULLMODEM2",
  "SERIAL_MODE_MIDI_STUDIO_SYSEX"
 //);
 ];
@@ -111,6 +119,47 @@ const midi_event_program_change=[]; //1 databyte
 const midi_event_channel_aftertouch=[]; //1 databyte
 const midi_event_pitch_bend=[];
 const midi_event_sysex=[]; // lets try it
+
+// vAmigaWeb_window.postMessage({cmd:"ser:", text: data}, "*");
+function INIT_NULLMODEM(){
+ switch (CURRENT_MODE) {
+ case MODE_NULLMODEM1:
+ that_frame = top.document.getElementById("that_frame");
+ vAmigaWeb2 = that_frame.contentWindow.document.getElementById("vAmigaWeb").contentWindow;
+ break;
+ case MODE_NULLMODEM2:
+ this_frame = top.document.getElementById("this_frame");
+ vAmigaWeb1 = this_frame.contentWindow.document.getElementById("vAmigaWeb").contentWindow;
+ break;
+ }
+}
+
+function ADOS_PTX_LINE(msg){
+var that_frame = document.getElementById("that_frame");
+msg="<H2><?php echo $amiga;?> says: "+msg+"</H2>";
+ // Send a message to the parent
+ window.parent.postMessage(msg, "*");
+}
+function ADOS_TX_LINE(msg){
+ let vAmigaWeb_window = document.getElementById("vAmigaWeb").contentWindow;
+ let data = msg;
+ switch (CURRENT_MODE) {
+ case MODE_AUX_CONSOLE:
+ case MODE_DEBUG:
+  data = data + "\r";
+  break;
+ }
+ vAmigaWeb_window.postMessage({cmd:"ser:", text: data}, "*");
+}
+function ADOS_TX_CHAR(msg){
+ let vAmigaWeb_window = document.getElementById("vAmigaWeb").contentWindow;
+ if (msg == "_BREAK_"){
+  let _BREAK_=0x03;
+  let data = String.fromCharCode(_BREAK_);
+  vAmigaWeb_window.postMessage({cmd:"ser:", text: data}, "*");
+ }
+}
+
 window.addEventListener('message', event => {
 if(event.data.msg == 'serial_port_out')
 {
@@ -118,12 +167,17 @@ if(event.data.msg == 'serial_port_out')
  case MODE_AUX:
  case MODE_AUX_CONSOLE:
   let byte_from_amiga=event.data.value;
-  out_buffer+=String.fromCharCode( byte_from_amiga & 0xff );
-  switch (byte_from_amiga &0xff){
+//  out_buffer+=String.fromCharCode( byte_from_amiga & 0xff );
+  switch (byte_from_amiga & 0xff){
+  case 0x0f: //skip
+   break;
   case 0x0a:
+   out_buffer+=String.fromCharCode( byte_from_amiga & 0xff );
    term.echo(out_buffer.trim());
    out_buffer="";
    break;
+  default:
+   out_buffer+=String.fromCharCode( byte_from_amiga & 0xff );
   }
   if (AMIGADOS_HELP_MODE==1){
    //AmigaDOS switches for AUX CONSOLE cmdline help mode [CMD ?]
@@ -319,6 +373,23 @@ if(event.data.msg == 'serial_port_out')
  case MODE_AMIGONET:
   term.echo("WIP.. this sutosensing mode enables a duplex serial (nullmodem/midi)connection at 31250 BAUD between multiple vAmigaWeb instances..");
   break;
+ case MODE_NULLMODEM1:
+  let tx1 = "";
+  let byte_from_amiga1=event.data.value;
+  //tx1 = String.fromCharCode(byte_from_amiga1 & 0xff) ;
+//  let raw_byte_from_amiga1=event.data.value & 0xff ;
+   vAmigaWeb2.postMessage({cmd:"ser:", byte: byte_from_amiga1}, "*");
+   //vAmigaWeb2.postMessage({cmd:"ser:", text: tx1}, "*");
+  //term.echo("WIP.. send data to vAmigaWeb instance 2..");
+  break;
+ case MODE_NULLMODEM2:
+  let tx2 = "";
+  let byte_from_amiga2=event.data.value;
+  //tx2 = String.fromCharCode(byte_from_amiga2 & 0xff) ;
+   //vAmigaWeb1.postMessage({cmd:"ser:", text: tx2}, "*");
+   vAmigaWeb1.postMessage({cmd:"ser:", byte: byte_from_amiga2}, "*");
+//  term.echo("WIP.. send data to vAmigaWeb instance 1..");
+  break;
  case MODE_MIDI_RUNTIME:
  //disabled but here comes the special modus on demand..
  //Amiga Music-X is OOTB Supported in MODE_MIDI_STUDIO
@@ -361,26 +432,13 @@ if(event.data.msg == 'serial_port_out')
   break;
  }
 }
+// try figure out how the parent acts
+//else //if(event.data.msg == 'message')
+//{
+//console.log(`Received message: ${event.data}`);
+//term.echo("this is a test of event: "+ event.data +","+event.type);
+//}
 });
-function ADOS_TX_LINE(msg){
- let vAmigaWeb_window = document.getElementById("vAmigaWeb").contentWindow;
- let data = msg;
- switch (CURRENT_MODE) {
- case MODE_AUX_CONSOLE:
- case MODE_DEBUG:
-  data = data + "\r";
-  break;
- }
- vAmigaWeb_window.postMessage({cmd:"ser:", text: data}, "*");
-}
-function ADOS_TX_CHAR(msg){
- let vAmigaWeb_window = document.getElementById("vAmigaWeb").contentWindow;
- if (msg == "_BREAK_"){
-  let _BREAK_=0x03;
-  let data = String.fromCharCode(_BREAK_);
-  vAmigaWeb_window.postMessage({cmd:"ser:", text: data}, "*");
- }
-}
 // MIDI_RUNTIME
 function ADOS_TX_MIDI(msg){
  let vAmigaWeb_window = document.getElementById("vAmigaWeb").contentWindow;
@@ -406,6 +464,15 @@ function onMIDISuccess( midiAccess ) {
 }
 function onMIDIFailure(msg) {
   term.echo( "Failed to get MIDI access - " + msg );
+}
+function onMIDISYSEXSuccess( midiAccess ) {
+  term.echo( "WebMIDI SYSEX API ready!" );
+  midi = midiAccess;  // store in the global (in real usage, would probably keep in an object instance)
+ // autostart the first MIDI output
+ startMIDIOutput(midi,0);
+}
+function onMIDISYSEXFailure(msg) {
+  term.echo( "Failed to get MIDI SYSEX access - " + msg );
 }
 function GET_MIDI_INPUTS( midiAccess ) {
   for (const entry of midiAccess.inputs) {
@@ -513,13 +580,14 @@ function TS0CA(modelID='Buffy') {
  switch (CURRENT_MODE) {
  case MODE_MIDI_MONITOR:
  case MODE_MIDI_RUNTIME:
- case MODE_MIDI_STUDIO:
+// case MODE_MIDI_STUDIO:
+ case MODE_MIDI_STUDIO_SYSEX:
 		// request MIDI access
 		if(navigator.requestMIDIAccess){
-			navigator.requestMIDIAccess({sysex: false}).then(onMIDISuccess, onMIDIFailure);
+			navigator.requestMIDIAccess({sysex: true}).then(onMIDISYSEXSuccess, onMIDISYSEXFailure);
 		}
 		else {
-			alert("No MIDI support in your browser.");
+			alert("No MIDI SYSEX support in your browser.");
 		}
 //  navigator.requestMIDIAccess().then( onMIDISuccess, onMIDIFailure );
   break;
@@ -574,7 +642,7 @@ jQuery( function($){
      " clear, click, close, engage, logout, mode, lic\n"+
      "Available Amiga's by Name: amy, buffy, claire, daisy, eva, faith, gwen\n"+
      "Available Amiga's by Type: a500, a600, a1000, a2000, a3000, cdtv\n"+
-     "Command Shells: midi, vamiga, ftp(dummy)"); }
+     "Command Shells: nullmodem, serial, midi, vamiga, ftp(dummy)"); }
      else if (cmd == 'about1'){ term.echo("AmiGoDOS dialect is my amiga-ish syntax flavoured devshell originated in Delphi7 Pascal in 2002..");}
       else if (cmd == 'about2'){ term.echo("tried to keep the AmigaDOS syntax somehow alive.. to get things done on MS side.. even in Amiga GUI style");}
        else if (cmd == 'about3'){ term.echo("used to connect to Amiga (FS-UAE) via TCP-COMPORT and relay to MIDI or REMOTE-CONSOLE..");}
@@ -678,12 +746,27 @@ jQuery( function($){
        { prompt: 'FTP> ', name: 'ftp' }
       );
      }
-     else if (cmd == 'ser'){
+     else if (cmd == 'nullmodem'){
+      term.push(
+       function(command, term) {
+        if (command == 'help') {term.echo('Available NULLMODEM commands:\n'+
+        'exit [leave NULLMODEM mode]\n'+
+        'init [start NULLMODEM Inputs/Outputs]\n'+
+        'cls [clear shell]');}
+        else if (command == 'cls'){ term.clear(); term.echo("AmiGoDOS - Developer Shell [" + user_mode[CURRENT_MODE] + "]"); }
+        else if (command == 'init') {INIT_NULLMODEM();}
+        else if (command == 'exit') {term.pop();}
+        else { term.echo('unknown NULLMODEM command ' + command); }
+       },
+       { prompt: 'NULLMODEM> ', name: 'ser' }
+      );
+     }
+     else if (cmd == 'serial'){
       term.push(
        function(command, term) {
         if (command == 'help') {term.echo('Available SERIAL commands:\n'+
-        'exit [leave SER mode]\n'+
-        'init [start SER Inputs/Outputs]\n'+
+        'exit [leave SERIAL mode]\n'+
+        'init [start SERIAL Inputs/Outputs]\n'+
         'cls [clear shell]');}
         else if (command == 'cls'){ term.clear(); term.echo("AmiGoDOS - Developer Shell [" + user_mode[CURRENT_MODE] + "]"); }
         else if (command == 'init') {START_SERIAL(serial);}
@@ -760,6 +843,7 @@ jQuery( function($){
      else if (cmd == 'exit'){ parent.location.assign(command_arr[0]); }
      else if (cmd == 'mode') { CURRENT_MODE=Number(command_arr[0]); term.echo("CURRENT_MODE: " + user_mode[CURRENT_MODE] ); }
      else if (cmd == 'tx'){ ADOS_TX_LINE( command_arr.join(" ") ); }
+     else if (cmd == 'ptx'){ ADOS_PTX_LINE( command_arr.join(" ") ); }
      else {
       // pass_through to AUX
       switch (CURRENT_MODE){
