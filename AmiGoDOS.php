@@ -8,6 +8,8 @@
  //behaviour.. if set then autoboot
  if ( !isset($_GET['autoboot']) ){ $init=''; }
  else{ $init='onInit: function() { TS0CA("'.$amiga.'");},'; }
+ //only for serial mode
+ if (!isset($_GET['baudrate'])){$baudrate=31250;}else{$baudrate=$_GET['baudrate'];}
  if ( !isset($_GET['boot']) ){
   $boot = '';
   $snapshot="     buttons: [
@@ -28,13 +30,13 @@
  else{
   $AmiGoTAWS = '<a href=\"http://tsoca.'.$server_name.'\" title=\"Visit our AmiGoXPE Salvation Platform (TAWS-based)..\" target=\"_blank\"><img src=\"Art/TS0CA_Model_MA2RTJE2K.png\" width=\"88\" height=\"88\"></a>';
 }
-  //the emulator files are in the same folder as the run.html
-  //you can also enable this and disable the players toolbar (see styles section above)
+  //the emulator files are in the same folder as the run.html let touch=(typeof touched!='undefined')?touched:false;touched=false;
+  //you can also enable this and disable the players toolbar (see styles section above)    //let touch=(typeof touched!='undefined')?touched:false;touched=false;
+
 $config_1="
     vAmigaWeb_player.vAmigaWeb_url='./';
-    let touch=(typeof touched!='undefined')?touched:false;touched=false;
     let config={
-     touch:touch,
+     touch:false,
      AROS:false,
      x_wait_for_kickstart_injection:true,
      navbar:false,
@@ -58,13 +60,19 @@ $config_1="
 <script src="js/keyboard.js"></script>
 <script>
 var term;
-var serial = null;  // global SERIALAccess object
+var portserial = null;  // global SERIALAccess object
+;(async () => {
+ // Initialize the list of available ports with `ports` on page load.
+ const ports = await navigator.serial.getPorts();
+ portserial=ports[0];
+})()
 var midi = null;  // global MIDIAccess object
 var this_frame = null;
 var that_frame = null;
+var vAmigaWeb0 = null;
 var vAmigaWeb1 = null;
 var vAmigaWeb2 = null;
-const ados_version = 20231122;
+const ados_version = 20231128;
 const server_name = "<?php echo $server_name;?>"
 //var PROMPT_TRIGGERS = ["> ","/N ","S/ ","/K "];
 const MODE_AUX = 0;
@@ -75,10 +83,12 @@ const MODE_DEBUG = 4;
 const MODE_MIDI_STUDIO = 5;
 //experimental mode to communicate between 2 embedded vAmigaWeb instances
 const MODE_AMIGONET = 6;
+//experimental mode to connect to real amiga via 3wire nullmodem cable
+const MODE_NULLMODEM0 = 7;
 //experimental mode to communicate between 2 embedded vAmigaWeb instances
-const MODE_HARDWARE = 7;
 const MODE_NULLMODEM1 = 8;
 const MODE_NULLMODEM2 = 9;
+const MODE_HARDWARE = 10;
 //only for processing SYSEX not to be called directly
 const MODE_MIDI_STUDIO_SYSEX = 55;
 //var CURRENT_MODE = MODE_DEBUG;
@@ -94,9 +104,10 @@ const user_mode = [
  "SERIAL_MODE_DEBUG",
  "SERIAL_MODE_MIDI_STUDIO",
  "SERIAL_MODE_AMIGONET",
- "SERIAL_MODE_HARDWARE",
+ "SERIAL_MODE_NULLMODEM0",
  "SERIAL_MODE_NULLMODEM1",
  "SERIAL_MODE_NULLMODEM2",
+ "SERIAL_MODE_HARDWARE",
  "SERIAL_MODE_MIDI_STUDIO_SYSEX"
 //);
 ];
@@ -119,10 +130,54 @@ const midi_event_program_change=[]; //1 databyte
 const midi_event_channel_aftertouch=[]; //1 databyte
 const midi_event_pitch_bend=[];
 const midi_event_sysex=[]; // lets try it
+//function bindEvent(element, eventName, eventHandler) {
+// if (element.addEventListener) {
+//  element.addEventListener(eventName, eventHandler, false);
+// } else if (element.attachEvent) {
+//    element.attachEvent("on" + eventName, eventHandler);
+//   }
+//}
 
-// vAmigaWeb_window.postMessage({cmd:"ser:", text: data}, "*");
 function INIT_NULLMODEM(){
  switch (CURRENT_MODE) {
+ case MODE_NULLMODEM0:
+  vAmigaWeb0 = document.getElementById("vAmigaWeb").contentWindow;
+  if ("serial" in navigator) {
+//	bOpenSerial = document.getElementById("openserial_button");
+//	bindEvent(bOpenSerial, "click", async () => {
+   const asyncFunc = async () => {
+	const port = await navigator.serial.requestPort();
+ 	await port.open({ baudRate: <?php echo $baudrate;?> });
+    portserial = port;
+ 	while (port.readable) {
+  	 const reader = port.readable.getReader();
+  	 try {
+      while (true) {
+       const { value, done } = await reader.read();
+       if (done) {
+        // |reader| has been canceled & allow the serial port to be closed later.
+        break;
+       }// Do something with |value|...
+       if (value) {
+       vAmigaWeb0.postMessage({cmd:"ser:", bytes: value}, "*");
+       //term.echo(value);
+       //console.log(value);
+       }
+      }
+ 	 }catch (error) {
+	   // Handle |error|...
+       } finally {
+    	reader.releaseLock();
+       }
+ 	  }
+   }//);
+   asyncFunc();
+  }
+  else {
+   term.echo('There is NO HW-Serial support in your browser.');
+   //alert("No SERIAL support in your browser.");
+  }
+ break;
  case MODE_NULLMODEM1:
  that_frame = top.document.getElementById("that_frame");
  vAmigaWeb2 = that_frame.contentWindow.document.getElementById("vAmigaWeb").contentWindow;
@@ -373,8 +428,28 @@ if(event.data.msg == 'serial_port_out')
  case MODE_AMIGONET:
   term.echo("WIP.. this sutosensing mode enables a duplex serial (nullmodem/midi)connection at 31250 BAUD between multiple vAmigaWeb instances..");
   break;
+ case MODE_NULLMODEM0:
+  let byte_from_amiga0=event.data.value;
+  navigator.serial.getPorts().then((ports) => {
+  portserial=ports[0];
+  });
+  if (portserial!=null){
+   //term.echo("PORT IS INITIALIZED.. READY FOR ACTION!");
+  ;(async () => {
+  //const ports = await navigator.serial.getPorts();
+  const writer = portserial.writable.getWriter();
+  const data = new Uint8Array([byte_from_amiga0]);
+  await writer.write(data);
+  // Allow the serial port to be closed later.
+  writer.releaseLock();
+  })()
+  //console.log(byte_from_amiga0);
+  }else{
+   term.echo("PORT IS NOT INITIALIZED!");
+  }
+  break;
  case MODE_NULLMODEM1:
-  let tx1 = "";
+  //let tx1 = "";
   let byte_from_amiga1=event.data.value;
   //tx1 = String.fromCharCode(byte_from_amiga1 & 0xff) ;
 //  let raw_byte_from_amiga1=event.data.value & 0xff ;
@@ -383,7 +458,7 @@ if(event.data.msg == 'serial_port_out')
   //term.echo("WIP.. send data to vAmigaWeb instance 2..");
   break;
  case MODE_NULLMODEM2:
-  let tx2 = "";
+  //let tx2 = "";
   let byte_from_amiga2=event.data.value;
   //tx2 = String.fromCharCode(byte_from_amiga2 & 0xff) ;
    //vAmigaWeb1.postMessage({cmd:"ser:", text: tx2}, "*");
@@ -567,6 +642,7 @@ function START_SERIAL( serAccess ) {
    term.echo('No HARDWARE SERIAL support in your browser.');
    //alert("No SERIAL support in your browser.");
   }
+
 }
 
 // local functions when not connected to AUX:
@@ -751,17 +827,20 @@ jQuery( function($){
        function(command, term) {
         if (command == 'help') {term.echo('Available NULLMODEM commands:\n'+
         'exit [leave NULLMODEM mode]\n'+
-        'init [start NULLMODEM Inputs/Outputs]\n'+
+        'init [start NULLMODEM Inputs/Outputs] depending on MODE_SERIAL_NULLMODEMx\n'+
         'cls [clear shell]');}
         else if (command == 'cls'){ term.clear(); term.echo("AmiGoDOS - Developer Shell [" + user_mode[CURRENT_MODE] + "]"); }
         else if (command == 'init') {INIT_NULLMODEM();}
+        else if (command == 'menu') {
+    	return $('<button id="openserial_button">Open Serial Port</button>');
+        }
         else if (command == 'exit') {term.pop();}
         else { term.echo('unknown NULLMODEM command ' + command); }
        },
        { prompt: 'NULLMODEM> ', name: 'ser' }
       );
      }
-     else if (cmd == 'serial'){
+     /*else if (cmd == 'serial'){
       term.push(
        function(command, term) {
         if (command == 'help') {term.echo('Available SERIAL commands:\n'+
@@ -873,7 +952,7 @@ jQuery( function($){
    greetings: "AmiGoDOS - Developer Shell [" + user_mode[CURRENT_MODE] + "]",
    prompt: "> ", //if AUX is active we get the prompt from the Amiga console
    <?php echo $init;?>//onInit
-   onBlur: function() {	return false; }// prevent loosing focus
+   onBlur: function() {	return false; }// prevent loosing focus   ontouchstart="touched=true"
   }
  );
 });
@@ -883,7 +962,6 @@ jQuery( function($){
 <div id="vAmigaWebContainer" style="display: flex;align-items: center;justify-content: left;">
  <div id="container">
   <img id="<?php echo $amiga;?>" style="width:960px; height:633px" src="Art/C1084_<?php echo $amiga;?>.gif"
-   ontouchstart="touched=true"
    onclick="<?php echo $config_1;?>"
   />
  </div>
