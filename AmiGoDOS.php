@@ -854,7 +854,7 @@ jQuery( function($){
        },
        { prompt: 'SER> ', name: 'ser' }
       );
-     }
+     }*/
      else if (cmd == 'midi'){
       term.push(
        function(command, term) {
