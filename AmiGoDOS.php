@@ -60,19 +60,25 @@ $config_1="
 <script src="js/keyboard.js"></script>
 <script>
 var term;
+//we need to store the ports for future reference
+//but every pc differs..
+//1 relative constant is COM1 which refers to the internal serial port (if available)
+//for now the other serial ports via USB should be ignored..
 var portserial = null;  // global SERIALAccess object
-;(async () => {
- // Initialize the list of available ports with `ports` on page load.
- const ports = await navigator.serial.getPorts();
- portserial=ports[0];
-})()
+//if ("serial" in navigator) {
+//;(async () => {
+// // Initialize the list of available ports with ports on page load.
+// const ports = await navigator.serial.getPorts();
+// portserial=ports[0]; //how to check success & what port it is?
+//})()
+//}
 var midi = null;  // global MIDIAccess object
 var this_frame = null;
 var that_frame = null;
 var vAmigaWeb0 = null;
 var vAmigaWeb1 = null;
 var vAmigaWeb2 = null;
-const ados_version = 20231128;
+const ados_version = 20231203;
 const server_name = "<?php echo $server_name;?>"
 //var PROMPT_TRIGGERS = ["> ","/N ","S/ ","/K "];
 const MODE_AUX = 0;
@@ -145,7 +151,7 @@ function INIT_NULLMODEM(){
   if ("serial" in navigator) {
 //	bOpenSerial = document.getElementById("openserial_button");
 //	bindEvent(bOpenSerial, "click", async () => {
-   const asyncFunc = async () => {
+   const asyncReaderFunc = async () => {
 	const port = await navigator.serial.requestPort();
  	await port.open({ baudRate: <?php echo $baudrate;?> });
     portserial = port;
@@ -171,7 +177,7 @@ function INIT_NULLMODEM(){
        }
  	  }
    }//);
-   asyncFunc();
+   asyncReaderFunc();
   }
   else {
    term.echo('There is NO HW-Serial support in your browser.');
