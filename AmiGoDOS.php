@@ -78,7 +78,9 @@ var that_frame = null;
 var vAmigaWeb0 = null;
 var vAmigaWeb1 = null;
 var vAmigaWeb2 = null;
-const ados_version = 20231203;
+const ADOS_TCP = "ws://127.0.0.1:8800/echo";
+var ADOS_Socket = null; //global TCP-Client WebSocket
+const ados_version = 20231207;
 const server_name = "<?php echo $server_name;?>"
 //var PROMPT_TRIGGERS = ["> ","/N ","S/ ","/K "];
 const MODE_AUX = 0;
@@ -95,6 +97,7 @@ const MODE_NULLMODEM0 = 7;
 const MODE_NULLMODEM1 = 8;
 const MODE_NULLMODEM2 = 9;
 const MODE_HARDWARE = 10;
+const MODE_NULLMODEM0_BETA = 11;
 //only for processing SYSEX not to be called directly
 const MODE_MIDI_STUDIO_SYSEX = 55;
 //var CURRENT_MODE = MODE_DEBUG;
@@ -114,6 +117,7 @@ const user_mode = [
  "SERIAL_MODE_NULLMODEM1",
  "SERIAL_MODE_NULLMODEM2",
  "SERIAL_MODE_HARDWARE",
+ "SERIAL_MODE_NULLMODEM0_BETA",
  "SERIAL_MODE_MIDI_STUDIO_SYSEX"
 //);
 ];
@@ -144,9 +148,25 @@ const midi_event_sysex=[]; // lets try it
 //   }
 //}
 
+function OPEN_TCPCLIENT(){
+ ADOS_Socket = new WebSocket( ADOS_TCP,);
+
+ ADOS_Socket.onmessage = (event) => {
+  console.log(event.data);
+ };
+
+ ADOS_Socket.onopen = (event) => {
+  ADOS_Socket.send("ECHO Here is some text that the server is urgently awaiting!");
+ };
+}
+
+function CLOSE_TCPCLIENT(){
+ ADOS_Socket.close();
+}
+
 function INIT_NULLMODEM(){
  switch (CURRENT_MODE) {
- case MODE_NULLMODEM0:
+ case MODE_NULLMODEM0,MODE_NULLMODEM0_BETA:
   vAmigaWeb0 = document.getElementById("vAmigaWeb").contentWindow;
   if ("serial" in navigator) {
 //	bOpenSerial = document.getElementById("openserial_button");
@@ -433,6 +453,27 @@ if(event.data.msg == 'serial_port_out')
   break;
  case MODE_AMIGONET:
   term.echo("WIP.. this sutosensing mode enables a duplex serial (nullmodem/midi)connection at 31250 BAUD between multiple vAmigaWeb instances..");
+  break;
+ case MODE_NULLMODEM0_BETA:
+  let data_from_amiga0=event.data.value
+  console.log("MIDI FROM 2.4");
+//  console.log(data_from_amiga0);
+  /*navigator.serial.getPorts().then((ports) => {
+  portserial=ports[0];
+  });
+  if (portserial!=null){
+   //term.echo("PORT IS INITIALIZED.. READY FOR ACTION!");
+  ;(async () => {
+  //const ports = await navigator.serial.getPorts();
+  const writer = portserial.writable.getWriter();
+  const data = new Uint8Array([data_from_amiga0]);
+  await writer.write(data);
+  // Allow the serial port to be closed later.
+  writer.releaseLock();
+  })()
+  }else{
+   term.echo("PORT IS NOT INITIALIZED!");
+  }*/
   break;
  case MODE_NULLMODEM0:
   let byte_from_amiga0=event.data.value;
@@ -740,23 +781,24 @@ jQuery( function($){
      else if (cmd == 'lic'){
      new Audio('Art/Y0_UP.mp3').play();
      term.echo(
-     "AmiGoDOS (TS0CA) licenses, attributions & more..\n"+
+     "AmiGoDOS (TS0CA) thankslist, licenses, attributions & more..\n"+
      "This just-for-the-fun-damen-tal-edu-art-zen-project utilises the following frameworks:\n"+
      "TAWS by Michael Rupp! [ https://taws.ch ]\n"+
      "vAmigaWeb (GPL-3.0) by Mithrendal [ https://github.com/vAmigaWeb/vAmigaWeb ]\n"+
+     "vAmiga-core (GPL-3.0) by Dirk W. Hoffmann [ https://github.com/dirkwhoffmann/vAmiga ]\n"+
      "Jquery.Terminal (MIT) by Jakub T. Jankiewicz [ https://github.com/jcubic/jquery.terminal ]\n"+
      "AmiGoDOS (TS0CA) by PTz(Peter Slootbeek)uAH [ https://github.com/PTz0uAH/AmiGoDOS ]\n"+
-     "You may use AmiGoDOS for free to maintain & preserve \"The Spirit Of Commodore Amiga\"..\n"+
-     "any usage outside (TS0CA) scope may need explicit oral consent..\n"+
+     "You as a private user may test AmiGoDOS for free to maintain & preserve \"The Spirit Of Commodore Amiga\"..\n"+
+     "any usage outside this (TS0CA) scope may need explicit oral consent..\n"+
      "\"Yo..up!\" tune performed by \"Maartje2K& The BigDreamers\" for PTz(SL02TBE2K-SYSTEMS)uAH..\n"+
      "\"Sunny\" logo (re)designed by Youp for PTz(SL02TBE2K-SYSTEMS)uAH..\n"+
-     "other gfx/art created/provided by \"Brother Gregorius\" [ https://www.facebook.com/genetic.wisdom ]\n"+
+     "other gfx/art created/provided by \"Brother G.\" [ https://www.facebook.com/genetic.wisdom ]\n"+
      "All trademarks belong to their respective owners!"
      );
      return $('<img src=\"Art/SL02TBE2K-SYSTEMS_logo.png\" width=\"64\" height=\"88\">'+
      '<img src=\"Art/AmiGoDOS_logo.png\" width=\"88\" height=\"88\">'+
      '<?php echo "$AmiGoTAWS";?>'+
-     '<a href=\"https://github.com/vAmigaWeb\" title=\"Click to visit the vAmigaWeb support site on GitHub\" target=\"_blank\"><img src=\"Art/TS0CA_vAmigaWeb_THANKS.png\" width=\"88\" height=\"88\"></a>'+
+     '<a href=\"https://github.com/vAmigaWeb\" title=\"Click to visit the vAmigaWeb dev-site on GitHub\" target=\"_blank\"><img src=\"Art/TS0CA_vAmigaWeb_THANKS.png\" width=\"88\" height=\"88\"></a>'+
      '<a href=\"https://taws.ch\" title=\"Visit the latest TAWS in Switzerland..\" target=\"_blank\"><img src=\"Art/TS0CA_TAWS_THANKS.png\" width=\"88\" height=\"88\"></a>'+
      '<a href=\"https://terminal.jcubic.pl/\" title=\"Click if you wish to visit the JQuery.Terminal support site in Poland\" target=\"_blank\"><img src=\"Art/TS0CA_JQueryTerminal_THANKS.png\" width=\"88\" height=\"88\"></a>'+
      '<a href=\"https://www.facebook.com/groups/612005812580097/\" title=\"AmiGoDOS is endorsed by the Admins of 47PAINFBAT.. Support (y)our Troops!\" target=\"_blank\"><img src=\"Art/TS0CA_670613165_TANKS.png\" width=\"88\" height=\"88\"></a>'
@@ -817,6 +859,26 @@ jQuery( function($){
      //else if (cmd == 'loadwb')	{ parent.location.assign("../taws.php"); }
      else if (cmd == 'logout')	{ parent.location.assign("../access/logout.php"); }
      else if (cmd == 'prompt')	{ term.echo("<?php echo "$prompt";?>"); }
+     else if (cmd == 'tcp'){
+      term.push(
+       function(command, term) {
+        if (command == 'help') {term.echo('Available TCP-Client commands:\n'+
+        'exit [leave TCP mode]\n'+
+        'open [open a TCP connection to AmiGoDOS - NewShell Server]\n'+
+        'close [close the TCP connection with AmiGoDOS - NewShell Server]\n'+
+        'cls [clear shell]');}
+        else if (command == 'cls'){ term.clear(); term.echo("AmiGoDOS - Developer Shell [" + user_mode[CURRENT_MODE] + "]"); }
+        else if (command == 'open') {OPEN_TCPCLIENT();}
+        else if (command == 'close') {CLOSE_TCPCLIENT();}
+        else if (command == 'menu') {
+    	return $('<button id="openserial_button">Open Serial Port</button>');
+        }
+        else if (command == 'exit') {term.pop();}
+        else { term.echo('unknown TCP-Client command ' + command); }
+       },
+       { prompt: 'TCP> ', name: 'tcp' }
+      );
+     }
      else if (cmd == 'ftp'){
       term.push(
        function(command, term) {
