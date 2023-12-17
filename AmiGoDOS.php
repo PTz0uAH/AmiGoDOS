@@ -80,7 +80,7 @@ var vAmigaWeb1 = null;
 var vAmigaWeb2 = null;
 const ADOS_TCP = "ws://127.0.0.1:8800/echo";
 var ADOS_Socket = null; //global TCP-Client WebSocket
-const ados_version = 20231215;
+const ados_version = "AmiGoDOS v20231217";
 const server_name = "<?php echo $server_name;?>"
 //var PROMPT_TRIGGERS = ["> ","/N ","S/ ","/K "];
 const MODE_AUX = 0;
@@ -97,7 +97,8 @@ const MODE_NULLMODEM0 = 7;
 const MODE_NULLMODEM1 = 8;
 const MODE_NULLMODEM2 = 9;
 const MODE_HARDWARE = 10;
-const MODE_NULLMODEM0_BETA = 11;
+//const MODE_NULLMODEM0_BETA = 11;
+//const MODE_DEBUG_UAT = 12;
 //only for processing SYSEX not to be called directly
 const MODE_MIDI_STUDIO_SYSEX = 55;
 //var CURRENT_MODE = MODE_DEBUG;
@@ -117,7 +118,8 @@ const user_mode = [
  "SERIAL_MODE_NULLMODEM1",
  "SERIAL_MODE_NULLMODEM2",
  "SERIAL_MODE_HARDWARE",
- "SERIAL_MODE_NULLMODEM0_BETA",
+// "SERIAL_MODE_NULLMODEM0_BETA",
+// "SERIAL_MODE_DEBUG_UAT",
  "SERIAL_MODE_MIDI_STUDIO_SYSEX"
 //);
 ];
@@ -166,7 +168,7 @@ function CLOSE_TCPCLIENT(){
 
 function INIT_NULLMODEM(){
  switch (CURRENT_MODE) {
- case MODE_NULLMODEM0,MODE_NULLMODEM0_BETA:
+ case MODE_NULLMODEM0/*MODE_NULLMODEM0_BETA*/:
   vAmigaWeb0 = document.getElementById("vAmigaWeb").contentWindow;
   if ("serial" in navigator) {
 //	bOpenSerial = document.getElementById("openserial_button");
@@ -454,11 +456,11 @@ if(event.data.msg == 'serial_port_out')
  case MODE_AMIGONET:
   term.echo("WIP.. this sutosensing mode enables a duplex serial (nullmodem/midi)connection at 31250 BAUD between multiple vAmigaWeb instances..");
   break;
- case MODE_NULLMODEM0_BETA:
+ /*case MODE_NULLMODEM0_BETA:
   let data_from_amiga0=event.data.value
   console.log("MIDI FROM 2.4");
 //  console.log(data_from_amiga0);
-  /*navigator.serial.getPorts().then((ports) => {
+  navigator.serial.getPorts().then((ports) => {
   portserial=ports[0];
   });
   if (portserial!=null){
@@ -473,8 +475,8 @@ if(event.data.msg == 'serial_port_out')
   })()
   }else{
    term.echo("PORT IS NOT INITIALIZED!");
-  }*/
-  break;
+  }
+  break;*/
  case MODE_NULLMODEM0:
   let byte_from_amiga0=event.data.value;
   navigator.serial.getPorts().then((ports) => {
@@ -536,6 +538,10 @@ if(event.data.msg == 'serial_port_out')
   }
 //  term.echo(performance.now()+": "+ midi_byte_from_amiga.toString(16));
   break;
+ /*case MODE_DEBUG_UAT:
+  let raw_bytes_from_amiga=event.data.value;
+  term.echo( " 0x"+raw_bytes_from_amiga.toString(16).toUpperCase().padStart(2, 0) );
+  break;*/
  case MODE_DEBUG:
   let raw_byte_from_amiga=event.data.value & 0xff ;
   switch ( raw_byte_from_amiga ){
