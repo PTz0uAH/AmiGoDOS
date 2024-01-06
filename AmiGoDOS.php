@@ -65,23 +65,19 @@ var term;
 //1 relative constant is COM1 which refers to the internal serial port (if available)
 //for now the other serial ports via USB should be ignored..
 var portserial = null;  // global SERIALAccess object
-//if ("serial" in navigator) {
-//;(async () => {
-// // Initialize the list of available ports with ports on page load.
-// const ports = await navigator.serial.getPorts();
-// portserial=ports[0]; //how to check success & what port it is?
-//})()
-//}
 var midi = null;  // global MIDIAccess object
 var this_frame = null;
 var that_frame = null;
 var vAmigaWeb0 = null;
 var vAmigaWeb1 = null;
 var vAmigaWeb2 = null;
-const ADOS_TCP = "ws://127.0.0.1:8800/echo";
+const ADOS_TCP_ECHO = "ws://127.0.0.1:8800/echo";
+const ADOS_TCP_ADOS = "ws://127.0.0.1:8800/ados";
+const ADOS_TCP_NULLMODEM = "ws://127.0.0.1:8800/nullmodem";
 var ADOS_Socket = null; //global TCP-Client WebSocket
-const ados_version = "AmiGoDOS v20231217";
+const ados_version = "AmiGoDOS v1.0b (20240106)";
 const server_name = "<?php echo $server_name;?>"
+const AMIGA_NAME = "<?php echo $amiga;?>";
 //var PROMPT_TRIGGERS = ["> ","/N ","S/ ","/K "];
 const MODE_AUX = 0;
 const MODE_MIDI_MONITOR = 1;
@@ -106,7 +102,6 @@ var CURRENT_MODE = Number("<?php echo $mode;?>"); //MODE_AUX_CONSOLE;
 var AMIGADOS_HELP_MODE = 0;
 const help = [];
 const user_mode = [
-//user_mode.push(
  "<?php echo $usermode;?>" ,
  "SERIAL_MODE_MIDI_MONITOR",
  "SERIAL_MODE_AUX_CONSOLE",
@@ -118,10 +113,7 @@ const user_mode = [
  "SERIAL_MODE_NULLMODEM1",
  "SERIAL_MODE_NULLMODEM2",
  "SERIAL_MODE_HARDWARE",
-// "SERIAL_MODE_NULLMODEM0_BETA",
-// "SERIAL_MODE_DEBUG_UAT",
  "SERIAL_MODE_MIDI_STUDIO_SYSEX"
-//);
 ];
 //how to receive AUX: serial data from the Amiga formatted in a compact way (trimmed)
 let out_buffer="";
@@ -142,28 +134,45 @@ const midi_event_program_change=[]; //1 databyte
 const midi_event_channel_aftertouch=[]; //1 databyte
 const midi_event_pitch_bend=[];
 const midi_event_sysex=[]; // lets try it
-//function bindEvent(element, eventName, eventHandler) {
-// if (element.addEventListener) {
-//  element.addEventListener(eventName, eventHandler, false);
-// } else if (element.attachEvent) {
-//    element.attachEvent("on" + eventName, eventHandler);
-//   }
-//}
 
-function OPEN_TCPCLIENT(){
- ADOS_Socket = new WebSocket( ADOS_TCP,);
-
+function OPEN_TCPCLIENT(protocol){
+ ADOS_Socket = new WebSocket( protocol,);
  ADOS_Socket.onmessage = (event) => {
-  console.log(event.data);
+ // relay it to the Amiga
+ // relay it to the console.log
+ // console.log(event.data);
+ // relay it to the terminal
+  switch (CURRENT_MODE) {
+  case MODE_AUX_CONSOLE:
+   //term.echo(event.data);
+   let vAmigaWeb_window = document.getElementById("vAmigaWeb").contentWindow;
+   let data = event.data;
+   //check help mode
+   AMIGADOS_HELP_MODE=0;
+   if (data.length>2){
+    if ( data.slice(-2)==" ?" ){AMIGADOS_HELP_MODE=1;}
+   }
+   data = data + "\r";
+   vAmigaWeb_window.postMessage({cmd:"ser:", text: data}, "*");
+   break;
+  default:
+   term.echo(event.data);
+  }
  };
-
  ADOS_Socket.onopen = (event) => {
-  ADOS_Socket.send("ECHO Here is some text that the server is urgently awaiting!");
+ // send it to Server at open
+  ADOS_Socket.send("say setclock load");//+AMIGA_NAME);//
  };
 }
 
 function CLOSE_TCPCLIENT(){
  ADOS_Socket.close();
+}
+
+function TCP_SAY(msg){
+ if (ADOS_Socket != null){
+  ADOS_Socket.send(msg);
+ }
 }
 
 function INIT_NULLMODEM(){
@@ -250,26 +259,38 @@ if(event.data.msg == 'serial_port_out')
  case MODE_AUX:
  case MODE_AUX_CONSOLE:
   let byte_from_amiga=event.data.value;
-//  out_buffer+=String.fromCharCode( byte_from_amiga & 0xff );
   switch (byte_from_amiga & 0xff){
+  case 0x0d: //skip
   case 0x0f: //skip
    break;
   case 0x0a:
-   out_buffer+=String.fromCharCode( byte_from_amiga & 0xff );
-   term.echo(out_buffer.trim());
+   if (ADOS_Socket != null){ ADOS_Socket.send(out_buffer);}
+   else { term.echo(out_buffer.trim());}
    out_buffer="";
    break;
   default:
    out_buffer+=String.fromCharCode( byte_from_amiga & 0xff );
   }
+ if (ADOS_Socket == null){
   if (AMIGADOS_HELP_MODE==1){
    //AmigaDOS switches for AUX CONSOLE cmdline help mode [CMD ?]
-   if (out_buffer.slice(-4)=="/N: "){term.set_prompt(out_buffer.trim());out_buffer="";}
-   if (out_buffer.slice(-4)=="/S: "){term.set_prompt(out_buffer.trim());out_buffer="";}
-   if (out_buffer.slice(-4)=="/K: "){term.set_prompt(out_buffer.trim());out_buffer="";}
+    if (out_buffer.slice(-4)=="/N: "){term.set_prompt(out_buffer.trim());out_buffer="";}
+    if (out_buffer.slice(-4)=="/S: "){term.set_prompt(out_buffer.trim());out_buffer="";}
+    if (out_buffer.slice(-4)=="/K: "){term.set_prompt(out_buffer.trim());out_buffer="";}
   }
   if (out_buffer.slice(-2)=="> "){term.set_prompt(out_buffer.trim());out_buffer="";}
   //Check if EndCLI was called
+ }//experimental
+ else{
+  if (AMIGADOS_HELP_MODE==1){
+   //AmigaDOS switches for AUX CONSOLE cmdline help mode [CMD ?]
+   //just a hack to let the prompt detection do its work
+    if (out_buffer.slice(-4)=="/N: "){ADOS_Socket.send(out_buffer.trim()+"> ");out_buffer="";}
+    if (out_buffer.slice(-4)=="/S: "){ADOS_Socket.send(out_buffer.trim()+"> ");out_buffer="";}
+    if (out_buffer.slice(-4)=="/K: "){ADOS_Socket.send(out_buffer.trim()+"> ");out_buffer="";}
+  }
+  if (out_buffer.slice(-2)=="> "){ADOS_Socket.send(out_buffer);out_buffer="";}
+ }
   if (out_buffer.includes("Process ")==true){
    if (out_buffer.includes(" ending")==true){term.set_prompt("> ");out_buffer="";}
   }
@@ -456,27 +477,6 @@ if(event.data.msg == 'serial_port_out')
  case MODE_AMIGONET:
   term.echo("WIP.. this sutosensing mode enables a duplex serial (nullmodem/midi)connection at 31250 BAUD between multiple vAmigaWeb instances..");
   break;
- /*case MODE_NULLMODEM0_BETA:
-  let data_from_amiga0=event.data.value
-  console.log("MIDI FROM 2.4");
-//  console.log(data_from_amiga0);
-  navigator.serial.getPorts().then((ports) => {
-  portserial=ports[0];
-  });
-  if (portserial!=null){
-   //term.echo("PORT IS INITIALIZED.. READY FOR ACTION!");
-  ;(async () => {
-  //const ports = await navigator.serial.getPorts();
-  const writer = portserial.writable.getWriter();
-  const data = new Uint8Array([data_from_amiga0]);
-  await writer.write(data);
-  // Allow the serial port to be closed later.
-  writer.releaseLock();
-  })()
-  }else{
-   term.echo("PORT IS NOT INITIALIZED!");
-  }
-  break;*/
  case MODE_NULLMODEM0:
   let byte_from_amiga0=event.data.value;
   navigator.serial.getPorts().then((ports) => {
@@ -533,15 +533,9 @@ if(event.data.msg == 'serial_port_out')
     term.echo( " 0x"+midi_byte_from_amiga.toString(16).toUpperCase().padStart(2, 0) );
     count = 0;
    }
-//   term.echo( "0x"+midi_byte_from_amiga.toString(16).toUpperCase().padStart(2, 0) );
    break;
   }
-//  term.echo(performance.now()+": "+ midi_byte_from_amiga.toString(16));
   break;
- /*case MODE_DEBUG_UAT:
-  let raw_bytes_from_amiga=event.data.value;
-  term.echo( " 0x"+raw_bytes_from_amiga.toString(16).toUpperCase().padStart(2, 0) );
-  break;*/
  case MODE_DEBUG:
   let raw_byte_from_amiga=event.data.value & 0xff ;
   switch ( raw_byte_from_amiga ){
@@ -553,19 +547,11 @@ if(event.data.msg == 'serial_port_out')
     term.echo( " 0x"+raw_byte_from_amiga.toString(16).toUpperCase().padStart(2, 0) );
     count = 0;
    }
-//   term.echo( "0x"+midi_byte_from_amiga.toString(16).toUpperCase().padStart(2, 0) );
    break;
   }
-//  term.echo(performance.now()+": "+ midi_byte_from_amiga.toString(16));
   break;
  }
 }
-// try figure out how the parent acts
-//else //if(event.data.msg == 'message')
-//{
-//console.log(`Received message: ${event.data}`);
-//term.echo("this is a test of event: "+ event.data +","+event.type);
-//}
 });
 // MIDI_RUNTIME
 function ADOS_TX_MIDI(msg){
@@ -626,11 +612,6 @@ function GET_MIDI_OUTPUTS( midiAccess ) {
 function apiMIDI_INS_OUTS( midiAccess ) {
  GET_MIDI_OUTPUTS(midiAccess);
  GET_MIDI_INPUTS(midiAccess);
-//for (const entry of midiAccess.inputs) {
-//  const input = entry[1];
-//  term.echo(input.id);
-//}
-
 }
 
 function apiMIDI_INIT( midiAccess ) {
@@ -638,10 +619,7 @@ function apiMIDI_INIT( midiAccess ) {
 		if(navigator.requestMIDIAccess){
 			navigator.requestMIDIAccess({sysex: false}).then(onMIDISuccess, onMIDIFailure);
 		}
-		else {
-			alert("No MIDI support in your browser.");
-		}
-
+		else { alert("No MIDI support in your browser.");}
 }
 
 function onMIDIMessage(event) {
@@ -754,6 +732,13 @@ display: none !important;
 </style>
 </head>
 <body>
+<div id="vAmigaWebContainer" style="display: flex;align-items: center;justify-content: left;">
+ <div id="container">
+  <img id="<?php echo $amiga;?>" style="width:960px; height:633px" src="Art/C1084_<?php echo $amiga;?>.gif"
+   onclick="<?php echo $config_1;?>"
+  />
+ </div>
+</div>
 <div id="AmiGoDOS" style="display: flex;align-items: center;justify-content: left;">
 <div id="NewShell">
 <script>
@@ -868,21 +853,35 @@ jQuery( function($){
      else if (cmd == 'tcp'){
       term.push(
        function(command, term) {
-        if (command == 'help') {term.echo('Available TCP-Client commands:\n'+
-        'exit [leave TCP mode]\n'+
-        'open [open a TCP connection to AmiGoDOS - NewShell Server]\n'+
-        'close [close the TCP connection with AmiGoDOS - NewShell Server]\n'+
-        'cls [clear shell]');}
-        else if (command == 'cls'){ term.clear(); term.echo("AmiGoDOS - Developer Shell [" + user_mode[CURRENT_MODE] + "]"); }
-        else if (command == 'open') {OPEN_TCPCLIENT();}
-        else if (command == 'close') {CLOSE_TCPCLIENT();}
-        else if (command == 'menu') {
-    	return $('<button id="openserial_button">Open Serial Port</button>');
-        }
-        else if (command == 'exit') {term.pop();}
-        else { term.echo('unknown TCP-Client command ' + command); }
-       },
-       { prompt: 'TCP> ', name: 'tcp' }
+       if (command.trim()!=''){
+        const sub_command_arr = command.split(" ");
+        let sub_cmd = sub_command_arr[0];
+        switch(sub_command_arr.length){
+        case 1:
+         if (sub_cmd == 'help') {
+          term.echo('Available TCP-mode commands:\n'+
+          'exit [leave TCP mode]\n'+
+          'open [open a TCP connection to AmiGoDOS - NewShell Server]\n'+
+          'close [close the TCP connection with AmiGoDOS - NewShell Server]\n'+
+          'say [send a string to the server]\n' +
+          'cls [clear shell]');
+         }
+         else if (sub_cmd == 'cls'){ term.clear(); term.echo("AmiGoDOS - Developer Shell [" + user_mode[CURRENT_MODE] + "]"); }
+         else if (sub_cmd == 'open') {OPEN_TCPCLIENT(ADOS_TCP_ADOS);} //DEFAULT
+         else if (sub_cmd == 'open_echo') {OPEN_TCPCLIENT(ADOS_TCP_ECHO);} //DEFAULT
+         else if (sub_cmd == 'close') {CLOSE_TCPCLIENT();}
+         else if (sub_cmd == 'menu') {return $('<button id="openserial_button">Open Serial Port</button>');}
+         else if (sub_cmd == 'exit') {term.pop();}
+         else {term.echo('SYNTAX_ERROR: unknown TCP-mode command ' + sub_cmd);}
+         break;
+        default:
+         if (sub_command_arr.length>>1){ sub_command_arr.splice(0,1);}
+         if (sub_cmd == 'say') { TCP_SAY( sub_command_arr.join(" ") );}
+         else if (sub_cmd == 'open') { OPEN_TCPCLIENT( sub_command_arr.join(" ") );}
+         else {term.echo('SYNTAX_ERROR: unknown TCP-mode command ' + sub_cmd);}
+        }//END SWITCH
+       }else{term.echo('SYNTAX_ERROR: EMPTY COMMAND! hint: type "help" to get help..');}
+       },{ prompt: 'TCP> ', name: 'tcp' }
       );
      }
      else if (cmd == 'ftp'){
@@ -914,21 +913,6 @@ jQuery( function($){
        { prompt: 'NULLMODEM> ', name: 'ser' }
       );
      }
-     /*else if (cmd == 'serial'){
-      term.push(
-       function(command, term) {
-        if (command == 'help') {term.echo('Available SERIAL commands:\n'+
-        'exit [leave SERIAL mode]\n'+
-        'init [start SERIAL Inputs/Outputs]\n'+
-        'cls [clear shell]');}
-        else if (command == 'cls'){ term.clear(); term.echo("AmiGoDOS - Developer Shell [" + user_mode[CURRENT_MODE] + "]"); }
-        else if (command == 'init') {START_SERIAL(serial);}
-        else if (command == 'exit') {term.pop();}
-        else { term.echo('unknown SER command ' + command); }
-       },
-       { prompt: 'SER> ', name: 'ser' }
-      );
-     }*/
      else if (cmd == 'midi'){
       term.push(
        function(command, term) {
@@ -997,6 +981,7 @@ jQuery( function($){
      else if (cmd == 'mode') { CURRENT_MODE=Number(command_arr[0]); term.echo("CURRENT_MODE: " + user_mode[CURRENT_MODE] ); }
      else if (cmd == 'tx'){ ADOS_TX_LINE( command_arr.join(" ") ); }
      else if (cmd == 'ptx'){ ADOS_PTX_LINE( command_arr.join(" ") ); }
+     else if (cmd == 'say'){ TCP_SAY( command_arr.join(" ") ); }
      else {
       // pass_through to AUX
       switch (CURRENT_MODE){
@@ -1032,13 +1017,6 @@ jQuery( function($){
 });
 </script>
 </div>
-</div>
-<div id="vAmigaWebContainer" style="display: flex;align-items: center;justify-content: left;">
- <div id="container">
-  <img id="<?php echo $amiga;?>" style="width:960px; height:633px" src="Art/C1084_<?php echo $amiga;?>.gif"
-   onclick="<?php echo $config_1;?>"
-  />
- </div>
 </div>
 </body>
 </html>
