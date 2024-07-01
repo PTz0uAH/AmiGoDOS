@@ -75,7 +75,7 @@ const ADOS_TCP_ECHO = "ws://127.0.0.1:8800/echo";
 const ADOS_TCP_ADOS = "ws://127.0.0.1:8800/ados";
 const ADOS_TCP_NULLMODEM = "ws://127.0.0.1:8800/nullmodem";
 var ADOS_Socket = null; //global TCP-Client WebSocket
-const ados_version = "AmiGoDOS v1.0b (20240413)";
+const ados_version = "AmiGoDOS v1.0b (20240701)";
 const server_name = "<?php echo $server_name;?>"
 const AMIGA_NAME = "<?php echo $amiga;?>";
 //var PROMPT_TRIGGERS = ["> ","/N ","S/ ","/K "];
@@ -117,6 +117,7 @@ const user_mode = [
 ];
 //how to receive AUX: serial data from the Amiga formatted in a compact way (trimmed)
 let out_buffer="";
+let skip=0;
 let count=0;
 let midi_byte_from_amiga = 0;
 let midi_running_status_note_on = false;
@@ -134,6 +135,10 @@ const midi_event_program_change=[]; //1 databyte
 const midi_event_channel_aftertouch=[]; //1 databyte
 const midi_event_pitch_bend=[];
 const midi_event_sysex=[]; // lets try it
+// check also for lowecase
+//const Amigas_by_Name = ["Amy","Buffy","Claire","Daisy","Eva","Faith","Gwen"];
+//const Amigas_by_Type = ["A500","A600","A1000","A2000","A3000","CDTV"];
+//const Amigas_by_Scene = ["BlitzBasic","ScalaMM","Music-X"];
 
 function OPEN_TCPCLIENT(protocol){
  ADOS_Socket = new WebSocket( protocol,);
@@ -167,6 +172,7 @@ function OPEN_TCPCLIENT(protocol){
 
 function CLOSE_TCPCLIENT(){
  ADOS_Socket.close();
+ ADOS_Socket = null;
 }
 
 function TCP_SAY(msg){
@@ -263,13 +269,24 @@ if(event.data.msg == 'serial_port_out')
   case 0x0d: //skip
   case 0x0f: //skip
    break;
+  case 0x1b: //filter os3.2 Escape Sequence
+   skip=4;
+   break;
+  case 0x9b: //filter os3.2 Control Sequence Introducer and skip next 3 bytes 20h
+   skip=3;
+   break;
   case 0x0a:
    if (ADOS_Socket != null){ ADOS_Socket.send(out_buffer);}
    else { term.echo(out_buffer.trim());}
+   skip=0;
    out_buffer="";
    break;
   default:
-   out_buffer+=String.fromCharCode( byte_from_amiga & 0xff );
+   if (skip==0){
+    out_buffer+=String.fromCharCode( byte_from_amiga & 0xff );
+   }else{
+    skip-=1;
+   }
   }
  if (ADOS_Socket == null){
   if (AMIGADOS_HELP_MODE==1){
@@ -278,7 +295,9 @@ if(event.data.msg == 'serial_port_out')
     if (out_buffer.slice(-4)=="/S: "){term.set_prompt(out_buffer.trim());out_buffer="";}
     if (out_buffer.slice(-4)=="/K: "){term.set_prompt(out_buffer.trim());out_buffer="";}
   }
-  if (out_buffer.slice(-2)=="> "){term.set_prompt(out_buffer.trim());out_buffer="";}
+  if (out_buffer.slice(-2)=="> " && out_buffer!="> "){term.set_prompt(out_buffer.trim());out_buffer="";}
+  //3.2 uses the string "> " as marker for a softlink so we need a second confirmation
+
   //Check if EndCLI was called
  }//experimental
  else{
@@ -756,7 +775,7 @@ jQuery( function($){
      " clear, click, close, engage, logout, mode, lic\n"+
      "Available Amiga's by Name: amy, buffy, claire, daisy, eva, faith, gwen\n"+
      "Available Amiga's by Type: a500, a600, a1000, a2000, a3000, cdtv\n"+
-     "Command Shells: nullmodem, serial, midi, vamiga, ftp(dummy)"); }
+     "Command Shells: nullmodem, serial, midi, vamiga, tcp, ftp(dummy)"); }
      else if (cmd == 'about1'){ term.echo("AmiGoDOS dialect is my amiga-ish syntax flavoured devshell originated in Delphi7 Pascal in 2002..");}
       else if (cmd == 'about2'){ term.echo("tried to keep the AmigaDOS syntax somehow alive.. to get things done on MS side.. even in Amiga GUI style");}
        else if (cmd == 'about3'){ term.echo("used to connect to Amiga (FS-UAE) via TCP-COMPORT and relay to MIDI or REMOTE-CONSOLE..");}
@@ -815,6 +834,7 @@ jQuery( function($){
       }
      }
      //else if (cmd == 'click')	{ parent.newcli(); }
+     //else if Amigas_by_Name.includes(cmd) {parent.location.assign("AmiGoDOS.php?amiga="+cmd+"&autoboot");}
      else if (cmd == 'a500')    { parent.location.assign("AmiGoDOS.php?amiga=A500");}
      else if (cmd == 'A500')    { parent.location.assign("AmiGoDOS.php?amiga=A500&autoboot");}
      else if (cmd == 'a600')    { parent.location.assign("AmiGoDOS.php?amiga=A600");}
