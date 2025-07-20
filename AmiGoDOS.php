@@ -5,6 +5,9 @@
  //we need to now if AmiGoDOS is called from within the TAWS environment
  if (!isset($_GET['mode'])){$mode=2;}else{$mode=$_GET['mode'];}
  if (!isset($_GET['amiga'])){$amiga='Buffy';}else{$amiga=$_GET['amiga'];}
+ //inspired by KCS PowerPC board, for now it starts the v86 OS in its own frame..
+ if (isset($_GET['ppc'])){$ppc='AmiGoXPE';}
+ if (!isset($_GET['ppc_os'])){$ppc_os='AmiGoXPE';}else{$ppc_os=$_GET['ppc_os'];}
  //behaviour.. if set then autoboot
  if ( !isset($_GET['autoboot']) ){ $init=''; }
  else{ $init='onInit: function() { TS0CA("'.$amiga.'");},'; }
@@ -19,6 +22,15 @@
   $boot = $_GET['boot'];
   $snapshot="url:'$boot'";
  }
+ if ( isset($_GET['workspace']) ){
+  $workspace = $amiga.'WS';
+  $boot = '';
+  $snapshot="     buttons: [
+   {run: true, script:`global_apptitle='$amiga';action('5000ms=>load_workspace($workspace)');`}
+  ]";
+ }
+ if (!isset($_GET['height'])){$height=560;}else{$height=$_GET['height'];}
+ 
  if (!isset($_ENV['HTTP_REFERER'])){ $REFERRER="EMPTY"; $TAWS_THANKS1="";$TAWS_THANKS2="";}
  else{ $REFERRER=$_ENV['HTTP_REFERER']; }
  //for TAWS detection we use /WB.php from subdir but the original TAWS uses /WB.html from root
@@ -32,6 +44,17 @@
 }
   //the emulator files are in the same folder as the run.html let touch=(typeof touched!='undefined')?touched:false;touched=false;
   //you can also enable this and disable the players toolbar (see styles section above)    //let touch=(typeof touched!='undefined')?touched:false;touched=false;
+
+//PPC MODE
+if (isset($ppc)){
+$core_version = 'PowerPC-v86 Bridge Board';
+$ui_version = 'beta 20250708';
+$config_1="
+    START_v86();
+   return false;";
+}
+//AMIGA MODE
+if (!isset($ppc)){
 
 $config_1="
     vAmigaWeb_player.vAmigaWeb_url='./';
@@ -49,15 +72,62 @@ $config_1="
     };
     vAmigaWeb_player.load(this,encodeURIComponent(JSON.stringify(config)));
    return false;";
+
+// get version of CORE and UI
+$file = fopen("sw.js","r");
+$count = "0";
+while(!feof($file)) {
+  $count++;    
+    switch ($count) {
+        case "1":
+            fgets($file);
+            break;
+        case "2":
+            $core_version = 'vAmigaCore: '.substr( fgets($file), 23, 5);
+            break;
+        case "3":
+            $ui_version = 'WebUI: '.substr( fgets($file), 20, 10);
+            break 2;
+        default: 
+            break;
+    }
+}
+fclose($file);
+}
 ?>
 <!DOCTYPE html>
 <html>
 <head>
 <script src="js/jquery.js"></script>
 <script src="js/jquery.terminal.min.js"></script>
-<link href="css/jquery.terminal.min.css" rel="stylesheet"/>
+<link href="css/jquery.terminal.css" rel="stylesheet"/>
 <script src="js/vAmigaWeb_player.js"></script>
 <script src="js/keyboard.js"></script>
+<script src="../v86/build/libv86.js"></script>
+<script>
+"use strict";
+
+function START_v86()
+{
+    var emulator = window.emulator = new V86({
+        wasm_path: "https://amigoxpe.net/v86/build/v86.wasm",
+        memory_size: 32 * 1024 * 1024,
+        vga_memory_size: 2 * 1024 * 1024,
+        screen_container: document.getElementById("vAmigaWebContainer"),
+        bios: {
+            url: "https://amigoxpe.net/v86/bios/seabios.bin",
+        },
+        vga_bios: {
+            url: "https://amigoxpe.net/v86/bios/vgabios.bin",
+        },
+        fda: {
+            url: "https://amigoxpe.net/v86/images/kolibri.img",
+        },
+        autostart: true,
+    });
+}
+</script>
+
 <script>
 var term;
 //we need to store the ports for future reference
@@ -68,6 +138,8 @@ var portserial = null;  // global SERIALAccess object
 var midi = null;  // global MIDIAccess object
 var this_frame = null;
 var that_frame = null;
+var amiga_frame = null;
+var ppc_frame = null;
 var vAmigaWeb0 = null;
 var vAmigaWeb1 = null;
 var vAmigaWeb2 = null;
@@ -75,7 +147,7 @@ const ADOS_TCP_ECHO = "ws://127.0.0.1:8800/echo";
 const ADOS_TCP_ADOS = "ws://127.0.0.1:8800/ados";
 const ADOS_TCP_NULLMODEM = "ws://127.0.0.1:8800/nullmodem";
 var ADOS_Socket = null; //global TCP-Client WebSocket
-const ados_version = "AmiGoDOS v1.0b (20240701)";
+const ados_version = "AmiGoDOS v1.0b (20250624)";
 const server_name = "<?php echo $server_name;?>"
 const AMIGA_NAME = "<?php echo $amiga;?>";
 //var PROMPT_TRIGGERS = ["> ","/N ","S/ ","/K "];
@@ -100,6 +172,7 @@ const MODE_MIDI_STUDIO_SYSEX = 55;
 //var CURRENT_MODE = MODE_DEBUG;
 var CURRENT_MODE = Number("<?php echo $mode;?>"); //MODE_AUX_CONSOLE;
 var AMIGADOS_HELP_MODE = 0;
+//var SHELL_HEIGHT = Number("<?php echo $height;?>"); //
 const help = [];
 const user_mode = [
  "<?php echo $usermode;?>" ,
@@ -115,6 +188,8 @@ const user_mode = [
  "SERIAL_MODE_HARDWARE",
  "SERIAL_MODE_MIDI_STUDIO_SYSEX"
 ];
+var bc1 = null;
+var bc2 = null;
 //how to receive AUX: serial data from the Amiga formatted in a compact way (trimmed)
 let out_buffer="";
 let skip=0;
@@ -232,12 +307,49 @@ function INIT_NULLMODEM(){
  }
 }
 
+function INIT_BROADCAST1(){
+// Connection to ados-broadcast channel 1
+ if (bc1 == null){
+  bc1 = new BroadcastChannel("ados1");
+  bc1.addEventListener("message", (event) => {
+   term.echo('BROADCAST1:' + event.data);
+   //console.log( "ADOS1" );
+   //console.log( event.data );
+  });
+ }
+}
+
+function INIT_BROADCAST2(){
+// Connection to ados-broadcast channel 2
+ if (bc2 == null){
+  bc2 = new BroadcastChannel("ados2");
+  bc2.addEventListener("message", (event) => {
+   term.echo('BROADCAST2:' + event.data);
+   //console.log( "ADOS2" );
+   //console.log( event.data );
+  });
+ }
+}
+
+function DO_ADOS_BROADCAST1(msg){
+ if (bc1 != null){
+  bc1.postMessage(msg);
+ }
+}
+
+function DO_ADOS_BROADCAST2(msg){
+ if (bc2 != null){
+  bc2.postMessage(msg);
+ }
+}
+
 function ADOS_PTX_LINE(msg){
 var that_frame = document.getElementById("that_frame");
 msg="<H2><?php echo $amiga;?> says: "+msg+"</H2>";
  // Send a message to the parent
  window.parent.postMessage(msg, "*");
 }
+
 function ADOS_TX_LINE(msg){
  let vAmigaWeb_window = document.getElementById("vAmigaWeb").contentWindow;
  let data = msg;
@@ -296,7 +408,8 @@ if(event.data.msg == 'serial_port_out')
     if (out_buffer.slice(-4)=="/K: "){term.set_prompt(out_buffer.trim());out_buffer="";}
   }
   if (out_buffer.slice(-2)=="> " && out_buffer!="> "){term.set_prompt(out_buffer.trim());out_buffer="";}
-  //3.2 uses the string "> " as marker for a softlink so we need a second confirmation
+  //if (out_buffer.slice(-2)=="> "){term.set_prompt(out_buffer.trim());out_buffer="";}
+  //3.2 uses the string as marker for a softlink so we need a second confirmation
 
   //Check if EndCLI was called
  }//experimental
@@ -736,7 +849,7 @@ function TS0CA(modelID='Buffy') {
 .terminal,span{--size: 1.0;}
 @font-face{
 font-family: NewTopaz;
-src: url("fonts/Topaz_a1200_v2.0.ttf");
+src: url("fonts/Topaz_a1200_v1.0.woff2");
 }
 body {
 background-color: darkgray;
@@ -759,9 +872,9 @@ display: none !important;
  </div>
 </div>
 <div id="AmiGoDOS" style="display: flex;align-items: center;justify-content: left;">
-<div id="NewShell">
-<script>
-jQuery( function($){
+ <div id="NewShell">
+ <script>
+ jQuery( function($){
  var id = 1;
  term = $('body').terminal(
   function(command, term) {
@@ -775,7 +888,8 @@ jQuery( function($){
      " clear, click, close, engage, logout, mode, lic\n"+
      "Available Amiga's by Name: amy, buffy, claire, daisy, eva, faith, gwen\n"+
      "Available Amiga's by Type: a500, a600, a1000, a2000, a3000, cdtv\n"+
-     "Command Shells: nullmodem, serial, midi, vamiga, tcp, ftp(dummy)"); }
+     "PowerPC v86 Expansion Board OSes: AmiGoXPE[, Amithlon, Aros, FreeDOS, Win2K3, etc.]\n"+
+     "Command Shells: nullmodem, serial, midi, vamiga, tcp, ftp(dummy), ppc"); }
      else if (cmd == 'about1'){ term.echo("AmiGoDOS dialect is my amiga-ish syntax flavoured devshell originated in Delphi7 Pascal in 2002..");}
       else if (cmd == 'about2'){ term.echo("tried to keep the AmigaDOS syntax somehow alive.. to get things done on MS side.. even in Amiga GUI style");}
        else if (cmd == 'about3'){ term.echo("used to connect to Amiga (FS-UAE) via TCP-COMPORT and relay to MIDI or REMOTE-CONSOLE..");}
@@ -915,6 +1029,21 @@ jQuery( function($){
        { prompt: 'FTP> ', name: 'ftp' }
       );
      }
+     else if (cmd == 'ppc'){
+      term.push(
+       function(command, term) {
+        if (command == 'help') {term.echo('Available PowerPC v86 commands: xping, init1, init2, test1, test2');}
+        else if (command == 'xping') {term.echo('xpong');}
+        else if (command == 'init1') {INIT_BROADCAST1();}
+        else if (command == 'init2') {INIT_BROADCAST2();}
+        else if (command == 'test1') {DO_ADOS_BROADCAST1("Dit is test1..");}
+        else if (command == 'test2') {DO_ADOS_BROADCAST2("Dit is test2..");}
+        else if (command == 'exit') {term.pop();}
+        else { term.echo('unknown PowerPC-v86 command ' + command); }
+       },
+       { prompt: 'PowerPC-v86> ', name: 'ppc' }
+      );
+     }
      else if (cmd == 'nullmodem'){
       term.push(
        function(command, term) {
@@ -965,13 +1094,14 @@ jQuery( function($){
         'exit [leave the vAmigaWeb Shell]\n'+
         'reset [reset the vAmiga]\n'+
         'toggle_run [run/pause vAmiga]\n'+
+        'load_workspace [load workspace]\n'+
         'take_snapshot [save snapshot to local storage]\n'+
         'restore_snapshot [restore snapshot from local storage]');}
         else if (command == 'restore_snapshot') {term.echo('dummy restore_snapshot');}
         else if (command == 'take_snapshot') { vAmigaWeb_player.exec(()=>action('take_snapshot')); }
-        //else if (command == 'take_snapshot') { vAmigaWeb_player.exec(()=>alert('Hoi!')); }
+        else if (command == 'load_workspace'){ vAmigaWeb_player.exec(()=>action('load_workspace(`<?php echo $amiga."WS";?>`)')); }
         //{term.echo('dummy take_snapshot');}
-        else if (command == 'exit')		  { term.pop(); }
+        else if (command == 'exit')	  { term.pop(); }
         else if (command == 'reset')  	  { vAmigaWeb_player.reset(); }
         else if (command == 'toggle_run') { vAmigaWeb_player.toggle_run(); }
         else { term.echo('unknown vAmigaWeb command ' + command); }
@@ -996,12 +1126,12 @@ jQuery( function($){
     default:
      if (command_arr.length>>1){ command_arr.splice(0,1);}
      if (cmd == 'click'){ parent.newcli(command_arr[0]); }
-     else if (cmd == 'echo')   { term.echo( command_arr.join(" ") ); }
+     else if (cmd == 'echo'){ term.echo( command_arr.join(" ") ); }
      else if (cmd == 'exit'){ parent.location.assign(command_arr[0]); }
-     else if (cmd == 'mode') { CURRENT_MODE=Number(command_arr[0]); term.echo("CURRENT_MODE: " + user_mode[CURRENT_MODE] ); }
-     else if (cmd == 'tx'){ ADOS_TX_LINE( command_arr.join(" ") ); }
-     else if (cmd == 'ptx'){ ADOS_PTX_LINE( command_arr.join(" ") ); }
-     else if (cmd == 'say'){ TCP_SAY( command_arr.join(" ") ); }
+     else if (cmd == 'mode'){ CURRENT_MODE=Number(command_arr[0]); term.echo("CURRENT_MODE: " + user_mode[CURRENT_MODE] ); }
+     else if (cmd == 'tx')  { ADOS_TX_LINE( command_arr.join(" ") ); }
+     else if (cmd == 'ptx') { ADOS_PTX_LINE( command_arr.join(" ") ); }
+     else if (cmd == 'say') { TCP_SAY( command_arr.join(" ") ); }
      else {
       // pass_through to AUX
       switch (CURRENT_MODE){
@@ -1027,16 +1157,19 @@ jQuery( function($){
     "CTRL+C": function() {ADOS_TX_CHAR("_BREAK_"); return false; }
    },
    width: 960,
-   height: 320,
-   greetings: "AmiGoDOS - Developer Shell [" + user_mode[CURRENT_MODE] + "]",
-   prompt: "> ", //if AUX is active we get the prompt from the Amiga console
-   <?php echo $init;?>//onInit
-   onBlur: function() {	return false; }// prevent loosing focus   ontouchstart="touched=true"
+   height: <?php echo $height;?>,
+   greetings: "AmiGoDOS - Developer Shell [" + user_mode[CURRENT_MODE] + "] [<?php echo $core_version;?> <?php echo $ui_version;?>]",
+   //if AUX is active we get the prompt from the Amiga console
+   prompt: "> ",
+   //if autoboot is not detected $init is empty
+   <?php echo $init;?>
+   // prevent loosing focus   ontouchstart="touched=true"
+   onBlur: function() {	return false; }
   }
  );
-});
-</script>
-</div>
+ });
+ </script>
+ </div>
 </div>
 </body>
 </html>
